@@ -13,7 +13,7 @@ test('manifest identifies the app and exposes install icons', async () => {
 
 test('home and install flow use the official root logo', async () => {
   const [html, script] = await Promise.all([readFile('index.html', 'utf8'), readFile('src/main.js', 'utf8')]);
-  assert.match(html, /src="\/logo\.png"/);
+  assert.match(html, /src="\/logo-web\.png"/);
   assert.match(html, /Organização <em>Revolucionários<\/em> App/);
   assert.match(html, /INSTALAR APP/);
   assert.match(script, /beforeinstallprompt/);
