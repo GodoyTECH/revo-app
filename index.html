@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#07101d" />
     <meta name="description" content="Central Diplomática da Organização Revolucionários." />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="Organização Revolucionários" />
+    <meta property="og:title" content="Organização Revolucionários | Central Diplomática" />
+    <meta property="og:description" content="Consulte aliados, inimigos e operações da Central Diplomática da Organização Revolucionários." />
+    <meta property="og:image" content="/logo.png" />
+    <meta property="og:image:alt" content="Emblema da Organização Revolucionários" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Organização Revolucionários | Central Diplomática" />
+    <meta name="twitter:description" content="Inteligência, estratégia e gestão de relações diplomáticas em um só lugar." />
+    <meta name="twitter:image" content="/logo.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Revolucionários" />
@@ -22,7 +33,7 @@
           <span><strong>REVOLUCIONÁRIOS</strong><small>Central Diplomática</small></span>
         </a>
         <nav aria-label="Navegação principal">
-          <a class="active" href="#inicio">Início</a><a href="#operacoes">Operações</a><a href="#status">Status</a>
+          <a class="active" href="#inicio">Início</a><a href="#operacoes">Operações</a><a href="#blacklist">Black List</a><a href="#status">Status</a>
         </nav>
         <button class="menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i></i><i></i><i></i></button>
       </header>
@@ -52,6 +63,23 @@
           </div>
         </section>
 
+        <section class="relations" id="blacklist" aria-labelledby="relations-title">
+          <div class="section-heading relations-heading">
+            <div><span class="kicker">INTELIGÊNCIA DIPLOMÁTICA</span><h2 id="relations-title">Black List</h2><p class="section-description">Registro estratégico de aliados e inimigos da organização.</p></div>
+            <button type="button" class="button secondary compact" id="manageRelations"><span class="button-icon">＋</span> GERENCIAR LISTA</button>
+          </div>
+          <div class="relation-toolbar">
+            <div class="tabs" role="tablist" aria-label="Filtrar relações">
+              <button type="button" class="tab active" role="tab" aria-selected="true" data-filter="all">TODOS <span id="allCount">0</span></button>
+              <button type="button" class="tab" role="tab" aria-selected="false" data-filter="ally">ALIADOS <span id="allyCount">0</span></button>
+              <button type="button" class="tab" role="tab" aria-selected="false" data-filter="enemy">INIMIGOS <span id="enemyCount">0</span></button>
+            </div>
+            <label class="search"><span>⌕</span><input id="relationSearch" type="search" placeholder="Buscar nome ou observação" aria-label="Buscar na Black List" /></label>
+          </div>
+          <div class="relation-list" id="relationList" aria-live="polite"></div>
+          <div class="empty-state" id="emptyState" hidden><span>◇</span><strong>Nenhum registro encontrado</strong><small>Altere o filtro ou adicione uma nova relação.</small></div>
+        </section>
+
         <section class="recent" id="status" aria-labelledby="recent-title">
           <div class="section-heading"><div><span class="kicker">ATIVIDADE</span><h2 id="recent-title">Movimentações recentes</h2></div><button type="button" class="text-button">VER TODAS →</button></div>
           <div class="activity-list">
@@ -64,6 +92,26 @@
 
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
         <div class="modal-card"><button class="modal-close" aria-label="Fechar">×</button><span class="kicker">CENTRAL DIPLOMÁTICA</span><h2 id="modalTitle"></h2><p id="modalText"></p><button class="button primary modal-ok">ENTENDIDO</button></div>
+      </div>
+      <div class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="adminTitle" hidden>
+        <div class="admin-card">
+          <button class="modal-close admin-close" type="button" aria-label="Fechar">×</button>
+          <div class="auth-view">
+            <span class="kicker">ACESSO RESTRITO</span><h2 id="adminTitle">Gerenciar Black List</h2>
+            <p>Informe a senha administrativa para adicionar, editar ou excluir registros.</p>
+            <form id="passwordForm"><label>Senha administrativa<input id="adminPassword" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••" required /></label><p class="form-error" id="passwordError" role="alert"></p><button class="button primary" type="submit">DESBLOQUEAR ACESSO</button></form>
+          </div>
+          <div class="manager-view" hidden>
+            <div class="manager-title"><div><span class="kicker">PAINEL ADMINISTRATIVO</span><h2>Gerenciar registros</h2></div><button class="text-button" id="lockAdmin" type="button">BLOQUEAR</button></div>
+            <form id="relationForm">
+              <input type="hidden" id="relationId" />
+              <div class="form-grid"><label>Nome<input id="relationName" maxlength="60" autocomplete="off" required placeholder="Nome do grupo ou pessoa" /></label><label>Classificação<select id="relationType" required><option value="ally">Aliado</option><option value="enemy">Inimigo</option></select></label></div>
+              <label>Observação<textarea id="relationNote" maxlength="180" rows="3" placeholder="Contexto estratégico (opcional)"></textarea></label>
+              <div class="form-actions"><button class="button ghost" id="cancelEdit" type="button" hidden>CANCELAR EDIÇÃO</button><button class="button primary" id="saveRelation" type="submit">ADICIONAR REGISTRO</button></div>
+            </form>
+            <div class="manager-list" id="managerList"></div>
+          </div>
+        </div>
       </div>
       <div class="toast" role="status" aria-live="polite"></div>
     </div>
