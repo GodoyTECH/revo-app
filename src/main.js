@@ -1,5 +1,3 @@
-import './styles.css';
-
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { factions: [], blacklist: [], filter: 'all', currentFaction: null, pendingOperation: null };
@@ -25,11 +23,17 @@ async function loadData() {
     const result = await api('overview');
     state.factions = result.factions || [];
     state.blacklist = result.blacklist || [];
+    $('#factionCount').textContent = state.factions.length;
+    $('#activeFactionCount').textContent = state.factions.filter((item) => item.status === 'active').length;
+    $('#blacklistCount').textContent = state.blacklist.filter((item) => item.status === 'active').length;
     renderFactions(); renderBlacklist();
   } catch (error) {
     $('.factionList')?.replaceChildren();
     toast(error.status === 503 ? 'Configure o banco para carregar os dados.' : error.message, true);
     renderFactions(); renderBlacklist();
+  } finally {
+    $('#factionLoading').hidden = true;
+    $('#relationLoading').hidden = true;
   }
 }
 
@@ -44,7 +48,7 @@ function renderFactions() {
   const term = $('#factionSearch').value.trim().toLocaleLowerCase('pt-BR');
   const visible = state.factions.filter((faction) => `${faction.name} ${faction.notes || ''} ${(faction.members || []).map((m) => `${m.name} ${m.role}`).join(' ')}`.toLocaleLowerCase('pt-BR').includes(term));
   $('#factionList').innerHTML = visible.map((faction) => `<article class="faction-card ${faction.status}">
-    <header>${faction.logo_url ? `<img src="${esc(faction.logo_url)}" alt="Logo da ${esc(faction.name)}" />` : '<img src="/logo.png" alt="" />'}<div><span class="relation-type">FAC ${faction.status === 'active' ? 'ATIVA' : 'INATIVA'}</span><h3>${esc(faction.name)}</h3></div></header>
+    <header>${faction.logo_url ? `<img src="${esc(faction.logo_url)}" alt="Logo da ${esc(faction.name)}" loading="lazy" />` : `<span class="faction-placeholder" aria-hidden="true">${esc(faction.name.slice(0, 2).toUpperCase())}</span>`}<div><span class="badge ${faction.status === 'active' ? 'badge-success' : 'badge-muted'}">${faction.status === 'active' ? 'ATIVA' : 'INATIVA'}</span><h3>${esc(faction.name)}</h3></div></header>
     <div class="role-grid">${memberBlocks(faction.members)}</div>
     <footer><small>Atualizada em ${formatDate(faction.updated_at)}</small><button type="button" class="text-button" data-faction="${faction.id}">VER DETALHES →</button></footer>
   </article>`).join('');
@@ -131,6 +135,8 @@ const installButton = $('#installButton'); let installPrompt;
 const openInfo = (title, text) => { $('#modalTitle').textContent = title; $('#modalText').textContent = text; $('.modal').hidden = false; document.body.classList.add('modal-open'); };
 const closeInfo = () => { $('.modal').hidden = true; document.body.classList.remove('modal-open'); };
 window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; installButton.classList.add('ready'); });
+window.addEventListener('appinstalled', () => { installPrompt = null; installButton.hidden = true; toast('Aplicativo instalado com sucesso.'); });
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) installButton.hidden = true;
 installButton.addEventListener('click', async () => { if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) openInfo('Instalar no iPhone', 'Toque em Compartilhar no Safari e depois em “Adicionar à Tela de Início”.'); else openInfo('Instalar aplicativo', 'Abra o menu do navegador e selecione “Instalar app”.'); });
 $$('.modal-close, .modal-ok').forEach((button) => { if (!button.matches('.admin-close,.faction-close,.member-close')) button.addEventListener('click', closeInfo); });
 $('[data-action="send"]').addEventListener('click', () => openInfo('Enviar diplomacia', 'O canal seguro está pronto para receber uma nova solicitação diplomática.'));

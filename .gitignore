@@ -6,3 +6,4 @@ npm-debug.log*
 # transportados pelo fluxo de revisão). Os derivados são recriados no build.
 logo.png
 public/icons/
+public/logo-web.png

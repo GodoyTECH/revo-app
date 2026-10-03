@@ -19,6 +19,7 @@
     <meta name="twitter:description" content="Central Diplomática da Organização Revolucionários. Gerencie FACs, Blacklist, aliados, inimigos e acompanhe a diplomacia da organização." />
     <meta name="twitter:image" content="/logo.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Organização Revolucionários App" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -26,13 +27,14 @@
     <link rel="icon" href="/icons/favicon-16x16.png" sizes="16x16" type="image/png" />
     <link rel="icon" href="/icons/favicon-32x32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
     <title>Organização Revolucionários App</title>
   </head>
   <body>
     <div id="app">
       <header class="topbar">
         <a class="brand" href="#inicio" aria-label="Organização Revolucionários — início">
-          <img src="/logo.png" alt="Emblema da Organização Revolucionários" />
+          <img src="/logo-web.png" width="512" height="512" alt="Emblema da Organização Revolucionários" />
           <span><strong>REVOLUCIONÁRIOS</strong><small>Central Diplomática</small></span>
         </a>
         <nav aria-label="Navegação principal">
@@ -45,7 +47,7 @@
         <section class="hero" id="inicio">
           <div class="orb orb-one"></div><div class="orb orb-two"></div>
           <div class="eyebrow"><span></span> SISTEMA OFICIAL DE COMUNICAÇÃO</div>
-          <div class="hero-logo"><div class="logo-aura"></div><img src="/logo.png" alt="Logo oficial da Organização Revolucionários" /></div>
+          <div class="hero-logo"><div class="logo-aura"></div><img src="/logo-web.png" width="512" height="512" alt="Logo oficial da Organização Revolucionários" /></div>
           <h1>Organização <em>Revolucionários</em> App</h1>
           <p class="subtitle">CENTRAL DIPLOMÁTICA</p>
           <p class="intro">Inteligência, estratégia e comunicação em uma plataforma segura para decisões que movem a organização.</p>
@@ -60,9 +62,9 @@
         <section class="dashboard" id="operacoes" aria-labelledby="overview-title">
           <div class="section-heading"><div><span class="kicker">VISÃO GERAL</span><h2 id="overview-title">Painel de operações</h2></div><span class="live"><i></i> SISTEMA OPERACIONAL</span></div>
           <div class="cards">
-            <article class="card"><div class="card-icon gold">⌁</div><div><small>DIPLOMACIAS ATIVAS</small><strong>12</strong><span><b>+3</b> esta semana</span></div></article>
-            <article class="card"><div class="card-icon blue">◈</div><div><small>AGUARDANDO ANÁLISE</small><strong>04</strong><span>Prioridade estratégica</span></div></article>
-            <article class="card"><div class="card-icon silver">✓</div><div><small>CONCLUÍDAS</small><strong>28</strong><span>Índice de êxito: <b>94%</b></span></div></article>
+            <article class="card"><div class="card-icon gold">⌁</div><div><small>FACs DA ORGANIZAÇÃO</small><strong id="factionCount">—</strong><span>FACs cadastradas</span></div></article>
+            <article class="card"><div class="card-icon blue">◈</div><div><small>FACs ATIVAS</small><strong id="activeFactionCount">—</strong><span>Operando na organização</span></div></article>
+            <article class="card"><div class="card-icon silver">!</div><div><small>BLACKLIST OFICIAL</small><strong id="blacklistCount">—</strong><span>Inimigos monitorados</span></div></article>
           </div>
         </section>
 
@@ -72,6 +74,7 @@
             <button type="button" class="button secondary compact" id="addFaction">＋ ADICIONAR FAC</button>
           </div>
           <label class="search faction-search"><span>⌕</span><input id="factionSearch" type="search" placeholder="Pesquisar FAC, 00, 01 ou 02" aria-label="Pesquisar FAC ou responsável" /></label>
+          <div class="loading-state" id="factionLoading" role="status"><span class="spinner" aria-hidden="true"></span>Carregando FACs...</div>
           <div class="faction-list" id="factionList" aria-live="polite"></div>
           <div class="empty-state" id="factionEmpty" hidden><span>◇</span><strong>Nenhuma FAC encontrada</strong><small>Pesquise outro termo ou cadastre uma FAC.</small></div>
         </section>
@@ -89,6 +92,7 @@
             </div>
             <label class="search"><span>⌕</span><input id="relationSearch" type="search" placeholder="Buscar nome ou observação" aria-label="Buscar na Black List" /></label>
           </div>
+          <div class="loading-state" id="relationLoading" role="status"><span class="spinner" aria-hidden="true"></span>Carregando Blacklist...</div>
           <div class="relation-list" id="relationList" aria-live="polite"></div>
           <div class="empty-state" id="emptyState" hidden><span>◇</span><strong>Nenhum registro encontrado</strong><small>Altere o filtro ou adicione uma nova relação.</small></div>
         </section>

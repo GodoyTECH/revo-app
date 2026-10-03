@@ -33,5 +33,6 @@ const original=await readFile(source), image=decodePng(original);
 const outputs=[['favicon-16x16.png',16,0],['favicon-32x32.png',32,0],['favicon.png',48,0],['apple-touch-icon.png',180,10],['icon-192.png',192,0],['icon-512.png',512,0],['maskable-icon-192.png',192,20],['maskable-icon-512.png',512,54]];
 const generated=new Map(outputs.map(([name,size,pad])=>[name,resize(image,size,pad)]));
 await Promise.all([...generated].map(([name,data])=>writeFile(resolve(icons,name),data)));
+await writeFile(resolve(root, 'public/logo-web.png'), resize(image, 512));
 const png32=generated.get('favicon-32x32.png'), icoHeader=Buffer.from([0,0,1,0,1,0,32,32,0,0,1,0,32,0,...Buffer.alloc(8)]); icoHeader.writeUInt32LE(png32.length,14); icoHeader.writeUInt32LE(22,18); await writeFile(resolve(icons,'favicon.ico'),Buffer.concat([icoHeader,png32]));
 console.log(`Ícones redimensionados a partir de ${source}`);
