@@ -1,0 +1,8 @@
+dist/
+node_modules/
+npm-debug.log*
+
+# A identidade oficial é fornecida fora do patch (arquivos binários não são
+# transportados pelo fluxo de revisão). Os derivados são recriados no build.
+logo.png
+public/icons/

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#07101d" />
+    <meta name="description" content="Central Diplomática da Organização Revolucionários." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Revolucionários" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/favicon.ico" sizes="any" />
+    <link rel="icon" href="/icons/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>Organização Revolucionários | Central Diplomática</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="#inicio" aria-label="Organização Revolucionários — início">
+          <img src="/logo.png" alt="Emblema da Organização Revolucionários" />
+          <span><strong>REVOLUCIONÁRIOS</strong><small>Central Diplomática</small></span>
+        </a>
+        <nav aria-label="Navegação principal">
+          <a class="active" href="#inicio">Início</a><a href="#operacoes">Operações</a><a href="#status">Status</a>
+        </nav>
+        <button class="menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i></i><i></i><i></i></button>
+      </header>
+
+      <main>
+        <section class="hero" id="inicio">
+          <div class="orb orb-one"></div><div class="orb orb-two"></div>
+          <div class="eyebrow"><span></span> SISTEMA OFICIAL DE COMUNICAÇÃO</div>
+          <div class="hero-logo"><div class="logo-aura"></div><img src="/logo.png" alt="Logo oficial da Organização Revolucionários" /></div>
+          <h1>Organização <em>Revolucionários</em> App</h1>
+          <p class="subtitle">CENTRAL DIPLOMÁTICA</p>
+          <p class="intro">Inteligência, estratégia e comunicação em uma plataforma segura para decisões que movem a organização.</p>
+          <div class="actions">
+            <button class="button primary" type="button" data-action="send"><span class="button-icon">✦</span> ENVIAR DIPLOMACIA</button>
+            <button class="button secondary" type="button" data-action="consult"><span class="button-icon">⌕</span> CONSULTAR DIPLOMACIA</button>
+            <button class="button ghost" id="installButton" type="button"><span class="button-icon">↓</span> INSTALAR APP</button>
+          </div>
+          <div class="secure"><span>◆</span> AMBIENTE SEGURO E CRIPTOGRAFADO <span>◆</span></div>
+        </section>
+
+        <section class="dashboard" id="operacoes" aria-labelledby="overview-title">
+          <div class="section-heading"><div><span class="kicker">VISÃO GERAL</span><h2 id="overview-title">Painel de operações</h2></div><span class="live"><i></i> SISTEMA OPERACIONAL</span></div>
+          <div class="cards">
+            <article class="card"><div class="card-icon gold">⌁</div><div><small>DIPLOMACIAS ATIVAS</small><strong>12</strong><span><b>+3</b> esta semana</span></div></article>
+            <article class="card"><div class="card-icon blue">◈</div><div><small>AGUARDANDO ANÁLISE</small><strong>04</strong><span>Prioridade estratégica</span></div></article>
+            <article class="card"><div class="card-icon silver">✓</div><div><small>CONCLUÍDAS</small><strong>28</strong><span>Índice de êxito: <b>94%</b></span></div></article>
+          </div>
+        </section>
+
+        <section class="recent" id="status" aria-labelledby="recent-title">
+          <div class="section-heading"><div><span class="kicker">ATIVIDADE</span><h2 id="recent-title">Movimentações recentes</h2></div><button type="button" class="text-button">VER TODAS →</button></div>
+          <div class="activity-list">
+            <article><span class="status-dot success"></span><div><strong>Acordo de cooperação aprovado</strong><small>Protocolo #RV-0428 · Conselho Estratégico</small></div><time>Há 2h</time></article>
+            <article><span class="status-dot pending"></span><div><strong>Nova diplomacia recebida</strong><small>Protocolo #RV-0431 · Aguardando análise</small></div><time>Há 5h</time></article>
+            <article><span class="status-dot info"></span><div><strong>Reunião de alinhamento agendada</strong><small>Comitê Central · 08 out, 19:00</small></div><time>Ontem</time></article>
+          </div>
+        </section>
+      </main>
+
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
+        <div class="modal-card"><button class="modal-close" aria-label="Fechar">×</button><span class="kicker">CENTRAL DIPLOMÁTICA</span><h2 id="modalTitle"></h2><p id="modalText"></p><button class="button primary modal-ok">ENTENDIDO</button></div>
+      </div>
+      <div class="toast" role="status" aria-live="polite"></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
