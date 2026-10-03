@@ -19,3 +19,19 @@ test('home and install flow use the official root logo', async () => {
   assert.match(script, /beforeinstallprompt/);
   assert.match(script, /Adicionar à Tela de Início/);
 });
+
+test('sharing metadata uses the official logo and describes the app', async () => {
+  const html = await readFile('index.html', 'utf8');
+  assert.match(html, /property="og:description"/);
+  assert.match(html, /property="og:image" content="\/logo\.png"/);
+  assert.match(html, /name="twitter:card" content="summary_large_image"/);
+});
+
+test('FACs, protected credential modal and complete social metadata are present', async () => {
+  const html = await readFile('index.html', 'utf8');
+  assert.match(html, /id="facs"/);
+  assert.match(html, /id="credentialModal"/);
+  assert.match(html, /maxlength="6"/);
+  assert.match(html, /property="og:url"/);
+  assert.match(html, /name="application-name" content="Organização Revolucionários App"/);
+});
