@@ -1,4 +1,4 @@
-const CACHE = 'revolucionarios-v2';
+const CACHE = 'revolucionarios-v3';
 const CORE = ['/', '/src/styles.css', '/src/main.js', '/logo.png', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(CORE)).then(() => self.skipWaiting())));

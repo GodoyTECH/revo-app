@@ -1,245 +1,141 @@
 import './styles.css';
 
-const installButton = document.querySelector('#installButton');
-const modal = document.querySelector('.modal');
-const modalTitle = document.querySelector('#modalTitle');
-const modalText = document.querySelector('#modalText');
-let installPrompt;
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const state = { factions: [], blacklist: [], filter: 'all', currentFaction: null, pendingOperation: null };
+const esc = (value = '') => { const node = document.createElement('span'); node.textContent = value; return node.innerHTML; };
+const formatDate = (value) => value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—';
+const whatsappDigits = (value) => String(value || '').replace(/\D/g, '');
+const formatWhatsapp = (value) => { const d = whatsappDigits(value); return d.length === 13 && d.startsWith('55') ? `+55 (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}` : `+${d}`; };
 
-// Para atualizar a senha administrativa, altere somente o valor abaixo no código.
-const ADMIN_PASSWORD = '101220';
-const STORAGE_KEY = 'revolucionarios:black-list';
-const defaultRelations = [
-  { id: 'rv-ally-1', name: 'Conselho Estratégico', type: 'ally', note: 'Cooperação ativa e canal diplomático prioritário.' },
-  { id: 'rv-ally-2', name: 'Guardiões do Norte', type: 'ally', note: 'Acordo de apoio mútuo confirmado.' },
-  { id: 'rv-enemy-1', name: 'Facção Eclipse', type: 'enemy', note: 'Contato suspenso. Monitoramento recomendado.' }
-];
+function toast(message, error = false) {
+  const el = $('.toast'); el.textContent = message; el.classList.toggle('error', error); el.classList.add('visible');
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('visible'), 2800);
+}
 
-function loadRelations() {
+async function api(resource, options = {}) {
+  const response = await fetch(`/api/${resource}`, { headers: { 'content-type': 'application/json' }, ...options });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) { const error = new Error(body.error || 'Não foi possível concluir a operação.'); error.status = response.status; throw error; }
+  return body;
+}
+
+async function loadData() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return Array.isArray(saved) ? saved : defaultRelations;
-  } catch {
-    return defaultRelations;
+    const result = await api('overview');
+    state.factions = result.factions || [];
+    state.blacklist = result.blacklist || [];
+    renderFactions(); renderBlacklist();
+  } catch (error) {
+    $('.factionList')?.replaceChildren();
+    toast(error.status === 503 ? 'Configure o banco para carregar os dados.' : error.message, true);
+    renderFactions(); renderBlacklist();
   }
 }
 
-let relations = loadRelations();
-let activeFilter = 'all';
-let adminUnlocked = false;
-
-const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
-
-function openModal(title, text) {
-  modalTitle.textContent = title;
-  modalText.textContent = text;
-  modal.hidden = false;
-  document.body.classList.add('modal-open');
-  modal.querySelector('.modal-close').focus();
+function memberBlocks(members = []) {
+  return ['00', '01', '02'].map((role) => {
+    const list = members.filter((member) => member.role === role);
+    return `<div class="role-block"><b>${role}</b>${list.length ? list.map((member) => `<span>${esc(member.name)} <small>${member.status === 'inactive' ? 'INATIVO' : ''}</small></span>`).join('') : '<span class="muted">Não cadastrado</span>'}</div>`;
+  }).join('');
 }
 
-function closeModal() {
-  modal.hidden = true;
-  document.body.classList.remove('modal-open');
+function renderFactions() {
+  const term = $('#factionSearch').value.trim().toLocaleLowerCase('pt-BR');
+  const visible = state.factions.filter((faction) => `${faction.name} ${faction.notes || ''} ${(faction.members || []).map((m) => `${m.name} ${m.role}`).join(' ')}`.toLocaleLowerCase('pt-BR').includes(term));
+  $('#factionList').innerHTML = visible.map((faction) => `<article class="faction-card ${faction.status}">
+    <header>${faction.logo_url ? `<img src="${esc(faction.logo_url)}" alt="Logo da ${esc(faction.name)}" />` : '<img src="/logo.png" alt="" />'}<div><span class="relation-type">FAC ${faction.status === 'active' ? 'ATIVA' : 'INATIVA'}</span><h3>${esc(faction.name)}</h3></div></header>
+    <div class="role-grid">${memberBlocks(faction.members)}</div>
+    <footer><small>Atualizada em ${formatDate(faction.updated_at)}</small><button type="button" class="text-button" data-faction="${faction.id}">VER DETALHES →</button></footer>
+  </article>`).join('');
+  $('#factionEmpty').hidden = visible.length > 0;
 }
 
-function escapeHtml(value) {
-  const node = document.createElement('span');
-  node.textContent = value;
-  return node.innerHTML;
+function renderBlacklist() {
+  const term = $('#relationSearch').value.trim().toLocaleLowerCase('pt-BR');
+  const visible = state.blacklist.filter((item) => (state.filter === 'all' || item.status === state.filter) && `${item.name} ${item.notes || ''}`.toLocaleLowerCase('pt-BR').includes(term));
+  $('#relationList').innerHTML = visible.map((item) => `<article class="relation-card enemy ${item.status}"><div class="relation-mark">△</div><div><span class="relation-type enemy">INIMIGO OFICIAL</span><h3>${esc(item.name)}</h3><p>${esc(item.notes || 'Sem observações.')}</p></div><span class="relation-status"><i></i>${item.status === 'active' ? 'ATIVO' : 'INATIVO'}</span></article>`).join('');
+  $('#emptyState').hidden = visible.length > 0;
+  $('#allCount').textContent = state.blacklist.length;
+  $('#activeCount').textContent = state.blacklist.filter((i) => i.status === 'active').length;
+  $('#inactiveCount').textContent = state.blacklist.filter((i) => i.status === 'inactive').length;
+  $('#managerList').innerHTML = state.blacklist.map((item) => `<article><div><span class="relation-type enemy">${item.status === 'active' ? 'ATIVO' : 'INATIVO'}</span><strong>${esc(item.name)}</strong></div><div class="row-actions"><button type="button" data-edit="${item.id}">EDITAR</button><button type="button" class="danger" data-delete="${item.id}">EXCLUIR</button></div></article>`).join('');
 }
 
-function saveRelations() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(relations));
+function requestCredential(operation) {
+  state.pendingOperation = operation;
+  $('#credentialModal').hidden = false; document.body.classList.add('modal-open');
+  $('#credentialError').textContent = ''; $('#credentialForm').reset(); setTimeout(() => $('#actionCredential').focus(), 0);
 }
+function closeCredential() { $('#credentialModal').hidden = true; state.pendingOperation = null; document.body.classList.remove('modal-open'); }
+$('#credentialForm').addEventListener('submit', async (event) => {
+  event.preventDefault(); const credential = $('#actionCredential').value;
+  if (!/^\d{6}$/.test(credential)) { $('#credentialError').textContent = 'Credencial inválida.'; return; }
+  const operation = state.pendingOperation;
+  try { await operation(credential); $('#credentialModal').hidden = true; state.pendingOperation = null; await loadData(); toast('Alteração realizada com sucesso.'); }
+  catch (error) { $('#credentialError').textContent = error.status === 401 ? 'Credencial inválida.' : error.message; $('#actionCredential').value = ''; $('#actionCredential').focus(); }
+});
+$('#cancelCredential').addEventListener('click', closeCredential);
 
-function showToast(message) {
-  const toast = document.querySelector('.toast');
-  toast.textContent = message;
-  toast.classList.add('visible');
-  clearTimeout(showToast.timeout);
-  showToast.timeout = setTimeout(() => toast.classList.remove('visible'), 2600);
-}
-
-const relationList = document.querySelector('#relationList');
-const managerList = document.querySelector('#managerList');
-const searchInput = document.querySelector('#relationSearch');
-
-function relationCard(item) {
-  const isAlly = item.type === 'ally';
-  return `<article class="relation-card ${item.type}">
-    <div class="relation-mark" aria-hidden="true">${isAlly ? '◇' : '△'}</div>
-    <div><span class="relation-type">${isAlly ? 'ALIADO' : 'INIMIGO'}</span><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.note || 'Nenhuma observação registrada.')}</p></div>
-    <span class="relation-status"><i></i>${isAlly ? 'COOPERAÇÃO' : 'ATENÇÃO'}</span>
-  </article>`;
-}
-
-function renderRelations() {
-  const term = searchInput.value.trim().toLocaleLowerCase('pt-BR');
-  const visible = relations.filter((item) => (activeFilter === 'all' || item.type === activeFilter)
-    && `${item.name} ${item.note}`.toLocaleLowerCase('pt-BR').includes(term));
-  relationList.innerHTML = visible.map(relationCard).join('');
-  document.querySelector('#emptyState').hidden = visible.length > 0;
-  document.querySelector('#allCount').textContent = relations.length;
-  document.querySelector('#allyCount').textContent = relations.filter((item) => item.type === 'ally').length;
-  document.querySelector('#enemyCount').textContent = relations.filter((item) => item.type === 'enemy').length;
-  managerList.innerHTML = relations.length ? relations.map((item) => `<article><div><span class="relation-type ${item.type}">${item.type === 'ally' ? 'ALIADO' : 'INIMIGO'}</span><strong>${escapeHtml(item.name)}</strong></div><div class="row-actions"><button type="button" data-edit="${item.id}" aria-label="Editar ${escapeHtml(item.name)}">EDITAR</button><button type="button" class="danger" data-delete="${item.id}" aria-label="Excluir ${escapeHtml(item.name)}">EXCLUIR</button></div></article>`).join('') : '<p class="manager-empty">Nenhum registro cadastrado.</p>';
-}
-
-document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => {
-  activeFilter = tab.dataset.filter;
-  document.querySelectorAll('.tab').forEach((item) => {
-    const selected = item === tab;
-    item.classList.toggle('active', selected);
-    item.setAttribute('aria-selected', String(selected));
-  });
-  renderRelations();
-}));
-searchInput.addEventListener('input', renderRelations);
-
-const adminModal = document.querySelector('.admin-modal');
-const authView = adminModal.querySelector('.auth-view');
-const managerView = adminModal.querySelector('.manager-view');
-const passwordForm = document.querySelector('#passwordForm');
-const relationForm = document.querySelector('#relationForm');
-
-function resetRelationForm() {
-  relationForm.reset();
-  document.querySelector('#relationId').value = '';
-  document.querySelector('#cancelEdit').hidden = true;
-  document.querySelector('#saveRelation').textContent = 'ADICIONAR REGISTRO';
-}
-
-function setManagerState(unlocked) {
-  adminUnlocked = unlocked;
-  authView.hidden = unlocked;
-  managerView.hidden = !unlocked;
-  document.querySelector('#passwordError').textContent = '';
-  document.querySelector('#adminPassword').value = '';
-  if (unlocked) renderRelations();
-}
-
-function openAdmin() {
-  adminModal.hidden = false;
-  document.body.classList.add('modal-open');
-  setManagerState(adminUnlocked);
-  requestAnimationFrame(() => (adminUnlocked ? document.querySelector('#relationName') : document.querySelector('#adminPassword')).focus());
-}
-
-function closeAdmin() {
-  adminModal.hidden = true;
-  document.body.classList.remove('modal-open');
-  resetRelationForm();
-}
-
-document.querySelector('#manageRelations').addEventListener('click', openAdmin);
-document.querySelector('.admin-close').addEventListener('click', closeAdmin);
-adminModal.addEventListener('click', (event) => { if (event.target === adminModal) closeAdmin(); });
-passwordForm.addEventListener('submit', (event) => {
+$('#changeCredential').addEventListener('click', () => { $('#changeCredentialForm').reset(); $('#changeCredentialError').textContent = ''; $('#changeCredentialModal').hidden = false; });
+$$('.change-credential-close').forEach((button) => button.addEventListener('click', () => { $('#changeCredentialModal').hidden = true; }));
+$('#changeCredentialForm').addEventListener('submit', (event) => {
   event.preventDefault();
-  if (document.querySelector('#adminPassword').value !== ADMIN_PASSWORD) {
-    document.querySelector('#passwordError').textContent = 'Senha incorreta. Tente novamente.';
-    document.querySelector('#adminPassword').select();
-    return;
-  }
-  setManagerState(true);
-  document.querySelector('#relationName').focus();
-});
-document.querySelector('#lockAdmin').addEventListener('click', () => { setManagerState(false); document.querySelector('#adminPassword').focus(); });
-document.querySelector('#cancelEdit').addEventListener('click', resetRelationForm);
-
-relationForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const id = document.querySelector('#relationId').value;
-  const entry = {
-    id: id || `rv-${Date.now()}`,
-    name: document.querySelector('#relationName').value.trim(),
-    type: document.querySelector('#relationType').value,
-    note: document.querySelector('#relationNote').value.trim()
-  };
-  if (!entry.name) return;
-  relations = id ? relations.map((item) => item.id === id ? entry : item) : [entry, ...relations];
-  saveRelations();
-  renderRelations();
-  resetRelationForm();
-  showToast(id ? 'Registro atualizado com sucesso.' : 'Registro adicionado com sucesso.');
+  const newCredential = $('#newCredential').value, confirmCredential = $('#confirmCredential').value;
+  if (!/^\d{6}$/.test(newCredential) || newCredential !== confirmCredential) { $('#changeCredentialError').textContent = 'As credenciais devem coincidir e conter 6 dígitos.'; return; }
+  $('#changeCredentialModal').hidden = true;
+  requestCredential((credential) => api('credential', { method: 'POST', body: JSON.stringify({ action: 'change', credential, data: { newCredential, confirmCredential } }) }));
 });
 
-managerList.addEventListener('click', (event) => {
-  const editId = event.target.dataset.edit;
-  const deleteId = event.target.dataset.delete;
-  if (editId) {
-    const item = relations.find((relation) => relation.id === editId);
-    document.querySelector('#relationId').value = item.id;
-    document.querySelector('#relationName').value = item.name;
-    document.querySelector('#relationType').value = item.type;
-    document.querySelector('#relationNote').value = item.note;
-    document.querySelector('#cancelEdit').hidden = false;
-    document.querySelector('#saveRelation').textContent = 'SALVAR ALTERAÇÕES';
-    document.querySelector('#relationName').focus();
-  }
-  if (deleteId) {
-    const item = relations.find((relation) => relation.id === deleteId);
-    if (window.confirm(`Excluir “${item.name}” da Black List?`)) {
-      relations = relations.filter((relation) => relation.id !== deleteId);
-      saveRelations();
-      renderRelations();
-      resetRelationForm();
-      showToast('Registro excluído.');
-    }
-  }
+$$('.tab').forEach((tab) => tab.addEventListener('click', () => { state.filter = tab.dataset.filter; $$('.tab').forEach((x) => { x.classList.toggle('active', x === tab); x.setAttribute('aria-selected', x === tab); }); renderBlacklist(); }));
+$('#relationSearch').addEventListener('input', renderBlacklist);
+$('#factionSearch').addEventListener('input', renderFactions);
+
+const adminModal = $('.admin-modal:not([id])');
+$('#manageRelations').addEventListener('click', () => { adminModal.hidden = false; document.body.classList.add('modal-open'); renderBlacklist(); });
+$('.admin-close').addEventListener('click', () => { adminModal.hidden = true; document.body.classList.remove('modal-open'); });
+function resetRelation() { $('#relationForm').reset(); $('#relationId').value = ''; $('#cancelEdit').hidden = true; $('#saveRelation').textContent = 'ADICIONAR REGISTRO'; }
+$('#cancelEdit').addEventListener('click', resetRelation);
+$('#relationForm').addEventListener('submit', (event) => {
+  event.preventDefault(); const id = $('#relationId').value; const data = { name: $('#relationName').value, status: $('#relationType').value, notes: $('#relationNote').value };
+  requestCredential((credential) => api('blacklist', { method: 'POST', body: JSON.stringify({ action: id ? 'update' : 'create', id, data, credential }) }));
+});
+$('#managerList').addEventListener('click', (event) => {
+  const item = state.blacklist.find((entry) => entry.id === (event.target.dataset.edit || event.target.dataset.delete)); if (!item) return;
+  if (event.target.dataset.edit) { $('#relationId').value = item.id; $('#relationName').value = item.name; $('#relationType').value = item.status; $('#relationNote').value = item.notes || ''; $('#cancelEdit').hidden = false; $('#saveRelation').textContent = 'SALVAR ALTERAÇÕES'; }
+  if (event.target.dataset.delete && confirm(`Tem certeza que deseja remover ${item.name} da Blacklist?`)) requestCredential((credential) => api('blacklist', { method: 'POST', body: JSON.stringify({ action: 'delete', id: item.id, credential }) }));
 });
 
-function updateInstallButton() {
-  if (isStandalone()) {
-    installButton.innerHTML = '<span class="button-icon">✓</span> APP INSTALADO';
-    installButton.disabled = true;
-  }
+function openFaction(faction = null) {
+  state.currentFaction = faction; $('#factionForm').reset(); $('#factionId').value = faction?.id || ''; $('#factionName').value = faction?.name || ''; $('#factionStatus').value = faction?.status || 'active'; $('#factionLogo').value = faction?.logo_url || ''; $('#factionNotes').value = faction?.notes || '';
+  $('#factionModalTitle').textContent = faction ? faction.name : 'Cadastrar FAC'; $('#deleteFaction').hidden = !faction; $('#memberArea').hidden = !faction; renderMemberManager(); $('#factionModal').hidden = false; document.body.classList.add('modal-open');
 }
+function closeFaction() { $('#factionModal').hidden = true; document.body.classList.remove('modal-open'); }
+$('#addFaction').addEventListener('click', () => openFaction());
+$('#factionList').addEventListener('click', (event) => { const id = event.target.dataset.faction; if (id) openFaction(state.factions.find((f) => f.id === id)); });
+$$('.faction-close').forEach((button) => button.addEventListener('click', closeFaction));
+$('#factionForm').addEventListener('submit', (event) => { event.preventDefault(); const id = $('#factionId').value; const data = { name: $('#factionName').value, status: $('#factionStatus').value, logoUrl: $('#factionLogo').value, notes: $('#factionNotes').value }; requestCredential(async (credential) => { await api('factions', { method: 'POST', body: JSON.stringify({ action: id ? 'update' : 'create', id, data, credential }) }); closeFaction(); }); });
+$('#deleteFaction').addEventListener('click', () => { const faction = state.currentFaction; if (faction && confirm(`Tem certeza que deseja remover ${faction.name} e seus responsáveis?`)) requestCredential(async (credential) => { await api('factions', { method: 'POST', body: JSON.stringify({ action: 'delete', id: faction.id, credential }) }); closeFaction(); }); });
 
-window.addEventListener('beforeinstallprompt', (event) => {
-  event.preventDefault();
-  installPrompt = event;
-  installButton.classList.add('ready');
-});
+function renderMemberManager() {
+  const members = state.currentFaction?.members || [];
+  $('#memberList').innerHTML = members.length ? members.map((m) => `<article><div><b>${m.role}</b><span><strong>${esc(m.name)}</strong><small>${formatWhatsapp(m.whatsapp)} · ${m.status === 'active' ? 'Ativo' : 'Inativo'}</small></span></div><a class="whatsapp" href="https://wa.me/${whatsappDigits(m.whatsapp)}" target="_blank" rel="noopener">WHATSAPP</a><div class="row-actions"><button data-member-edit="${m.id}">EDITAR</button><button class="danger" data-member-delete="${m.id}">REMOVER</button></div></article>`).join('') : '<p class="manager-empty">Nenhum responsável cadastrado.</p>';
+}
+function openMember(member = null) { $('#memberForm').reset(); $('#memberId').value = member?.id || ''; $('#memberName').value = member?.name || ''; $('#memberRole').value = member?.role || '00'; $('#memberWhatsapp').value = member?.whatsapp || ''; $('#memberStatus').value = member?.status || 'active'; $('#memberNotes').value = member?.notes || ''; $('#memberModalTitle').textContent = member ? 'Editar responsável' : 'Adicionar responsável'; $('#memberModal').hidden = false; }
+$('#addMember').addEventListener('click', () => openMember());
+$$('.member-close').forEach((button) => button.addEventListener('click', () => { $('#memberModal').hidden = true; }));
+$('#memberForm').addEventListener('submit', (event) => { event.preventDefault(); const id = $('#memberId').value; const data = { factionId: state.currentFaction.id, name: $('#memberName').value, role: $('#memberRole').value, whatsapp: $('#memberWhatsapp').value, status: $('#memberStatus').value, notes: $('#memberNotes').value }; requestCredential(async (credential) => { await api('members', { method: 'POST', body: JSON.stringify({ action: id ? 'update' : 'create', id, data, credential }) }); $('#memberModal').hidden = true; closeFaction(); }); });
+$('#memberList').addEventListener('click', (event) => { const id = event.target.dataset.memberEdit || event.target.dataset.memberDelete; const member = state.currentFaction?.members.find((m) => m.id === id); if (!member) return; if (event.target.dataset.memberEdit) openMember(member); if (event.target.dataset.memberDelete && confirm(`Tem certeza que deseja remover ${member.name}?`)) requestCredential(async (credential) => { await api('members', { method: 'POST', body: JSON.stringify({ action: 'delete', id, credential }) }); closeFaction(); }); });
 
-window.addEventListener('appinstalled', () => {
-  installPrompt = null;
-  updateInstallButton();
-});
-
-installButton.addEventListener('click', async () => {
-  if (installPrompt) {
-    installPrompt.prompt();
-    await installPrompt.userChoice;
-    installPrompt = null;
-  } else if (isIOS()) {
-    openModal('Instalar no iPhone', 'Toque no botão Compartilhar do Safari e depois em “Adicionar à Tela de Início”.');
-  } else {
-    openModal('Instalar aplicativo', 'Abra o menu do navegador e selecione “Instalar app” ou “Adicionar à tela inicial”.');
-  }
-});
-
-document.querySelector('[data-action="send"]').addEventListener('click', () => openModal('Enviar diplomacia', 'O canal seguro para uma nova solicitação diplomática está pronto para receber sua mensagem.'));
-document.querySelector('[data-action="consult"]').addEventListener('click', () => document.querySelector('#status').scrollIntoView({ behavior: 'smooth' }));
-document.querySelectorAll('.modal-close, .modal-ok').forEach((button) => button.addEventListener('click', closeModal));
-modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
-document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape') return;
-  if (!adminModal.hidden) closeAdmin();
-  else if (!modal.hidden) closeModal();
-});
-
-const menu = document.querySelector('.menu');
-const nav = document.querySelector('nav');
-menu.addEventListener('click', () => {
-  const open = menu.getAttribute('aria-expanded') === 'true';
-  menu.setAttribute('aria-expanded', String(!open));
-  nav.classList.toggle('open', !open);
-});
-nav.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => { nav.classList.remove('open'); menu.setAttribute('aria-expanded', 'false'); }));
-
+const installButton = $('#installButton'); let installPrompt;
+const openInfo = (title, text) => { $('#modalTitle').textContent = title; $('#modalText').textContent = text; $('.modal').hidden = false; document.body.classList.add('modal-open'); };
+const closeInfo = () => { $('.modal').hidden = true; document.body.classList.remove('modal-open'); };
+window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; installButton.classList.add('ready'); });
+installButton.addEventListener('click', async () => { if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) openInfo('Instalar no iPhone', 'Toque em Compartilhar no Safari e depois em “Adicionar à Tela de Início”.'); else openInfo('Instalar aplicativo', 'Abra o menu do navegador e selecione “Instalar app”.'); });
+$$('.modal-close, .modal-ok').forEach((button) => { if (!button.matches('.admin-close,.faction-close,.member-close')) button.addEventListener('click', closeInfo); });
+$('[data-action="send"]').addEventListener('click', () => openInfo('Enviar diplomacia', 'O canal seguro está pronto para receber uma nova solicitação diplomática.'));
+$('[data-action="consult"]').addEventListener('click', () => $('#blacklist').scrollIntoView({ behavior: 'smooth' }));
+const menu = $('.menu'), nav = $('nav'); menu.addEventListener('click', () => { const open = menu.getAttribute('aria-expanded') === 'true'; menu.setAttribute('aria-expanded', String(!open)); nav.classList.toggle('open', !open); });
+$$('nav a').forEach((link) => link.addEventListener('click', () => { nav.classList.remove('open'); menu.setAttribute('aria-expanded', 'false'); }));
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
-updateInstallButton();
-renderRelations();
+loadData();

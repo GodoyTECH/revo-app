@@ -27,13 +27,11 @@ test('sharing metadata uses the official logo and describes the app', async () =
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
 });
 
-test('protected Black List supports allies, enemies and management actions', async () => {
-  const [html, script] = await Promise.all([readFile('index.html', 'utf8'), readFile('src/main.js', 'utf8')]);
-  assert.match(html, /id="blacklist"/);
-  assert.match(html, /data-filter="ally"/);
-  assert.match(html, /data-filter="enemy"/);
-  assert.match(script, /const ADMIN_PASSWORD = '101220'/);
-  assert.match(script, /localStorage\.setItem/);
-  assert.match(script, /data-edit/);
-  assert.match(script, /data-delete/);
+test('FACs, protected credential modal and complete social metadata are present', async () => {
+  const html = await readFile('index.html', 'utf8');
+  assert.match(html, /id="facs"/);
+  assert.match(html, /id="credentialModal"/);
+  assert.match(html, /maxlength="6"/);
+  assert.match(html, /property="og:url"/);
+  assert.match(html, /name="application-name" content="Organização Revolucionários App"/);
 });

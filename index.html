@@ -4,26 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#07101d" />
-    <meta name="description" content="Central Diplomática da Organização Revolucionários." />
+    <meta name="description" content="Central Diplomática da Organização Revolucionários. Gerencie FACs, Blacklist, aliados, inimigos e acompanhe a diplomacia da organização." />
+    <meta name="application-name" content="Organização Revolucionários App" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="pt_BR" />
     <meta property="og:site_name" content="Organização Revolucionários" />
-    <meta property="og:title" content="Organização Revolucionários | Central Diplomática" />
-    <meta property="og:description" content="Consulte aliados, inimigos e operações da Central Diplomática da Organização Revolucionários." />
+    <meta property="og:title" content="Organização Revolucionários App" />
+    <meta property="og:description" content="Central Diplomática da Organização Revolucionários. Gerencie FACs, Blacklist, aliados, inimigos e acompanhe a diplomacia da organização." />
     <meta property="og:image" content="/logo.png" />
+    <meta property="og:url" content="/" />
     <meta property="og:image:alt" content="Emblema da Organização Revolucionários" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Organização Revolucionários | Central Diplomática" />
-    <meta name="twitter:description" content="Inteligência, estratégia e gestão de relações diplomáticas em um só lugar." />
+    <meta name="twitter:title" content="Organização Revolucionários App" />
+    <meta name="twitter:description" content="Central Diplomática da Organização Revolucionários. Gerencie FACs, Blacklist, aliados, inimigos e acompanhe a diplomacia da organização." />
     <meta name="twitter:image" content="/logo.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Revolucionários" />
+    <meta name="apple-mobile-web-app-title" content="Organização Revolucionários App" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/favicon.ico" sizes="any" />
-    <link rel="icon" href="/icons/favicon.png" type="image/png" />
+    <link rel="icon" href="/icons/favicon-16x16.png" sizes="16x16" type="image/png" />
+    <link rel="icon" href="/icons/favicon-32x32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <title>Organização Revolucionários | Central Diplomática</title>
+    <title>Organização Revolucionários App</title>
   </head>
   <body>
     <div id="app">
@@ -33,7 +36,7 @@
           <span><strong>REVOLUCIONÁRIOS</strong><small>Central Diplomática</small></span>
         </a>
         <nav aria-label="Navegação principal">
-          <a class="active" href="#inicio">Início</a><a href="#operacoes">Operações</a><a href="#blacklist">Black List</a><a href="#status">Status</a>
+          <a class="active" href="#inicio">Início</a><a href="#facs">FACs</a><a href="#blacklist">Blacklist</a><a href="#status">Histórico</a>
         </nav>
         <button class="menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i></i><i></i><i></i></button>
       </header>
@@ -63,16 +66,26 @@
           </div>
         </section>
 
+        <section class="factions" id="facs" aria-labelledby="factions-title">
+          <div class="section-heading relations-heading">
+            <div><span class="kicker">ORGANIZAÇÃO REVOLUCIONÁRIOS</span><h2 id="factions-title">FACs da Organização</h2><p class="section-description">Consulte FACs e responsáveis 00, 01 e 02.</p></div>
+            <button type="button" class="button secondary compact" id="addFaction">＋ ADICIONAR FAC</button>
+          </div>
+          <label class="search faction-search"><span>⌕</span><input id="factionSearch" type="search" placeholder="Pesquisar FAC, 00, 01 ou 02" aria-label="Pesquisar FAC ou responsável" /></label>
+          <div class="faction-list" id="factionList" aria-live="polite"></div>
+          <div class="empty-state" id="factionEmpty" hidden><span>◇</span><strong>Nenhuma FAC encontrada</strong><small>Pesquise outro termo ou cadastre uma FAC.</small></div>
+        </section>
+
         <section class="relations" id="blacklist" aria-labelledby="relations-title">
           <div class="section-heading relations-heading">
-            <div><span class="kicker">INTELIGÊNCIA DIPLOMÁTICA</span><h2 id="relations-title">Black List</h2><p class="section-description">Registro estratégico de aliados e inimigos da organização.</p></div>
+            <div><span class="kicker">INTELIGÊNCIA DIPLOMÁTICA</span><h2 id="relations-title">Blacklist oficial</h2><p class="section-description">Gangues e FACs externas classificadas como inimigos oficiais.</p></div>
             <button type="button" class="button secondary compact" id="manageRelations"><span class="button-icon">＋</span> GERENCIAR LISTA</button>
           </div>
           <div class="relation-toolbar">
             <div class="tabs" role="tablist" aria-label="Filtrar relações">
               <button type="button" class="tab active" role="tab" aria-selected="true" data-filter="all">TODOS <span id="allCount">0</span></button>
-              <button type="button" class="tab" role="tab" aria-selected="false" data-filter="ally">ALIADOS <span id="allyCount">0</span></button>
-              <button type="button" class="tab" role="tab" aria-selected="false" data-filter="enemy">INIMIGOS <span id="enemyCount">0</span></button>
+              <button type="button" class="tab" role="tab" aria-selected="false" data-filter="active">ATIVOS <span id="activeCount">0</span></button>
+              <button type="button" class="tab" role="tab" aria-selected="false" data-filter="inactive">INATIVOS <span id="inactiveCount">0</span></button>
             </div>
             <label class="search"><span>⌕</span><input id="relationSearch" type="search" placeholder="Buscar nome ou observação" aria-label="Buscar na Black List" /></label>
           </div>
@@ -96,16 +109,11 @@
       <div class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="adminTitle" hidden>
         <div class="admin-card">
           <button class="modal-close admin-close" type="button" aria-label="Fechar">×</button>
-          <div class="auth-view">
-            <span class="kicker">ACESSO RESTRITO</span><h2 id="adminTitle">Gerenciar Black List</h2>
-            <p>Informe a senha administrativa para adicionar, editar ou excluir registros.</p>
-            <form id="passwordForm"><label>Senha administrativa<input id="adminPassword" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••" required /></label><p class="form-error" id="passwordError" role="alert"></p><button class="button primary" type="submit">DESBLOQUEAR ACESSO</button></form>
-          </div>
-          <div class="manager-view" hidden>
-            <div class="manager-title"><div><span class="kicker">PAINEL ADMINISTRATIVO</span><h2>Gerenciar registros</h2></div><button class="text-button" id="lockAdmin" type="button">BLOQUEAR</button></div>
+          <div class="manager-view">
+            <div class="manager-title"><div><span class="kicker">PAINEL ADMINISTRATIVO</span><h2 id="adminTitle">Gerenciar Blacklist</h2></div><button class="text-button" id="changeCredential" type="button">ALTERAR CREDENCIAL</button></div>
             <form id="relationForm">
               <input type="hidden" id="relationId" />
-              <div class="form-grid"><label>Nome<input id="relationName" maxlength="60" autocomplete="off" required placeholder="Nome do grupo ou pessoa" /></label><label>Classificação<select id="relationType" required><option value="ally">Aliado</option><option value="enemy">Inimigo</option></select></label></div>
+              <div class="form-grid"><label>Nome<input id="relationName" maxlength="100" autocomplete="off" required placeholder="Nome da gangue ou FAC externa" /></label><label>Status<select id="relationType" required><option value="active">Ativo</option><option value="inactive">Inativo</option></select></label></div>
               <label>Observação<textarea id="relationNote" maxlength="180" rows="3" placeholder="Contexto estratégico (opcional)"></textarea></label>
               <div class="form-actions"><button class="button ghost" id="cancelEdit" type="button" hidden>CANCELAR EDIÇÃO</button><button class="button primary" id="saveRelation" type="submit">ADICIONAR REGISTRO</button></div>
             </form>
@@ -113,6 +121,16 @@
           </div>
         </div>
       </div>
+      <div class="admin-modal" id="factionModal" role="dialog" aria-modal="true" aria-labelledby="factionModalTitle" hidden>
+        <div class="admin-card"><button class="modal-close faction-close" type="button" aria-label="Fechar">×</button>
+          <div class="manager-title"><div><span class="kicker">FAC DA ORGANIZAÇÃO</span><h2 id="factionModalTitle">Cadastrar FAC</h2></div></div>
+          <form id="factionForm"><input id="factionId" type="hidden" /><div class="form-grid"><label>Nome da FAC<input id="factionName" maxlength="100" required /></label><label>Status<select id="factionStatus"><option value="active">Ativa</option><option value="inactive">Inativa</option></select></label></div><label>URL da logo (opcional)<input id="factionLogo" type="url" placeholder="https://..." /></label><label>Observação<textarea id="factionNotes" maxlength="500" rows="3"></textarea></label><div class="form-actions"><button class="button danger-button" id="deleteFaction" type="button" hidden>EXCLUIR FAC</button><button class="button ghost faction-close" type="button">CANCELAR</button><button class="button primary" type="submit">SALVAR FAC</button></div></form>
+          <div id="memberArea" hidden><div class="manager-title subheading"><h3>Responsáveis 00, 01 e 02</h3><button class="text-button" id="addMember" type="button">＋ ADICIONAR</button></div><div id="memberList" class="member-manager-list"></div></div>
+        </div>
+      </div>
+      <div class="admin-modal" id="memberModal" role="dialog" aria-modal="true" aria-labelledby="memberModalTitle" hidden><div class="admin-card small-card"><button class="modal-close member-close" type="button" aria-label="Fechar">×</button><span class="kicker">RESPONSÁVEL DA FAC</span><h2 id="memberModalTitle">Adicionar responsável</h2><form id="memberForm"><input id="memberId" type="hidden" /><div class="form-grid"><label>Nome<input id="memberName" maxlength="100" required /></label><label>Cargo<select id="memberRole"><option>00</option><option>01</option><option>02</option></select></label></div><label>WhatsApp<input id="memberWhatsapp" type="tel" inputmode="tel" placeholder="+5511999999999" required /></label><label>Status<select id="memberStatus"><option value="active">Ativo</option><option value="inactive">Inativo</option></select></label><label>Observação<textarea id="memberNotes" maxlength="500" rows="2"></textarea></label><div class="form-actions"><button class="button ghost member-close" type="button">CANCELAR</button><button class="button primary" type="submit">SALVAR RESPONSÁVEL</button></div></form></div></div>
+      <div class="admin-modal credential-modal" id="credentialModal" role="dialog" aria-modal="true" aria-labelledby="credentialTitle" hidden><div class="admin-card small-card"><span class="kicker">ACESSO RESTRITO</span><h2 id="credentialTitle">Autorização necessária</h2><p>Digite a credencial de 6 dígitos para continuar.</p><form id="credentialForm"><label>Credencial<input id="actionCredential" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off" placeholder="_ _ _ _ _ _" required /></label><p class="form-error" id="credentialError" role="alert"></p><div class="form-actions"><button class="button ghost" id="cancelCredential" type="button">CANCELAR</button><button class="button primary" type="submit">CONFIRMAR</button></div></form></div></div>
+      <div class="admin-modal" id="changeCredentialModal" role="dialog" aria-modal="true" aria-labelledby="changeCredentialTitle" hidden><div class="admin-card small-card"><button class="modal-close change-credential-close" type="button" aria-label="Fechar">×</button><span class="kicker">ADMINISTRAÇÃO PRINCIPAL</span><h2 id="changeCredentialTitle">Alterar credencial</h2><form id="changeCredentialForm"><label>Nova credencial<input id="newCredential" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" required /></label><label>Confirmar nova credencial<input id="confirmCredential" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" required /></label><p class="form-error" id="changeCredentialError"></p><div class="form-actions"><button class="button ghost change-credential-close" type="button">CANCELAR</button><button class="button primary" type="submit">CONTINUAR</button></div></form></div></div>
       <div class="toast" role="status" aria-live="polite"></div>
     </div>
     <script type="module" src="/src/main.js"></script>
