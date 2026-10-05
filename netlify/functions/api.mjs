@@ -1,7 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import { randomUUID } from 'node:crypto';
 import { authorizeMutation, CREDENTIAL_PATTERN, hashCredential } from './lib/security.mjs';
-import { cleanFaction, cleanMember, cleanText, normalizeName, validStatus, validUuid } from './lib/validation.mjs';
+import { cleanDiplomacySubmission, cleanFaction, cleanMember, cleanText, normalizeName, validStatus, validUuid } from './lib/validation.mjs';
 
 const json = (statusCode, body) => ({ statusCode, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, body: JSON.stringify(body) });
 const routeOf = (event) => (event.path || '').replace(/^.*\/api\/?/, '').replace(/^\/+|\/+$/g, '') || 'overview';
@@ -12,7 +12,36 @@ async function readData(sql, route) {
   if (route === 'blacklist') return sql.query("SELECT * FROM external_relations WHERE relation_type='blacklist' ORDER BY name");
   if (route === 'allies') return sql.query("SELECT * FROM external_relations WHERE relation_type='official_ally' ORDER BY name");
   if (route === 'audit') return sql.query('SELECT id, operation, entity_type, entity_id, previous_value, new_value, created_at FROM audit_logs ORDER BY created_at DESC LIMIT 100');
+  if (route === 'diplomacy') {
+    const gangs = await sql.query(`WITH latest AS (SELECT DISTINCT ON (source_faction_id, relation_type) id, source_faction_id, relation_type FROM diplomacy_snapshots WHERE status='CONFIRMED' ORDER BY source_faction_id, relation_type, confirmed_at DESC), active_factions AS (SELECT id, name, gang_id FROM organization_factions WHERE status='active') SELECT g.id, g.canonical_name AS name, bool_or(l.relation_type='ENEMY') AS is_enemy, bool_or(l.relation_type='ALLY') AS is_ally, bool_or(r.status='active') AS blacklisted, EXISTS(SELECT 1 FROM active_factions own WHERE own.gang_id=g.id) AS is_organization, COALESCE(json_agg(DISTINCT jsonb_build_object('id', f.id, 'name', f.name)) FILTER (WHERE l.relation_type='ENEMY'), '[]') AS enemy_of, COALESCE(json_agg(DISTINCT jsonb_build_object('id', f.id, 'name', f.name)) FILTER (WHERE l.relation_type='ALLY'), '[]') AS ally_of FROM latest l JOIN diplomacy_entries e ON e.snapshot_id=l.id JOIN gangs g ON g.id=e.target_gang_id JOIN active_factions f ON f.id=l.source_faction_id LEFT JOIN external_relations r ON r.gang_id=g.id AND r.relation_type='blacklist' GROUP BY g.id ORDER BY g.canonical_name`);
+    const history = await sql.query(`SELECT s.id,s.relation_type,s.created_at,s.confirmed_at,f.name AS source_name,count(e.id)::int AS entry_count FROM diplomacy_snapshots s JOIN organization_factions f ON f.id=s.source_faction_id LEFT JOIN diplomacy_entries e ON e.snapshot_id=s.id GROUP BY s.id,f.name ORDER BY s.created_at DESC LIMIT 50`);
+    return { gangs, history };
+  }
   return { factions: await readData(sql, 'factions'), blacklist: await readData(sql, 'blacklist'), allies: await readData(sql, 'allies') };
+}
+
+async function submitDiplomacy(sql, body) {
+  const data = cleanDiplomacySubmission(body);
+  if (!data) return json(400, { error: 'Envio OCR inválido.' });
+  const source = await sql.query("SELECT id FROM organization_factions WHERE id=$1 AND status='active'", [data.sourceFactionId]);
+  if (!source.length) return json(400, { error: 'FAC de origem inválida ou inativa.' });
+  const duplicate = await sql.query('SELECT sha256 FROM submission_images WHERE sha256=ANY($1::text[]) LIMIT 1', [data.images.map((item) => item.sha256)]);
+  if (duplicate.length) return json(409, { error: 'Uma destas imagens já foi processada.', duplicate: true });
+  const snapshotId = randomUUID();
+  const queries = [sql.query("INSERT INTO diplomacy_snapshots(id,source_faction_id,relation_type,import_mode,status,confirmed_at) VALUES($1,$2,$3,$4,'CONFIRMED',now())", [snapshotId, data.sourceFactionId, data.relationType, data.importMode])];
+  const uniqueEntries = new Map(data.entries.map((entry) => [normalizeName(entry.name), entry]));
+  for (const [normalized, entry] of uniqueEntries) {
+    const gangId = randomUUID();
+    queries.push(sql.query('INSERT INTO gangs(id,canonical_name,normalized_name) VALUES($1,$2,$3) ON CONFLICT(normalized_name) DO UPDATE SET updated_at=now()', [gangId, entry.name, normalized]));
+    queries.push(sql.query('INSERT INTO diplomacy_entries(snapshot_id,target_gang_id,ocr_original_text,ocr_confidence) SELECT $1,id,$3,$4 FROM gangs WHERE normalized_name=$2', [snapshotId, normalized, entry.originalText, entry.confidence]));
+  }
+  for (const image of data.images) {
+    const imageId = randomUUID();
+    queries.push(sql.query('INSERT INTO submission_images(id,snapshot_id,file_name,mime_type,sha256) VALUES($1,$2,$3,$4,$5)', [imageId, snapshotId, image.fileName, image.mimeType, image.sha256]));
+    queries.push(sql.query('INSERT INTO ocr_results(submission_image_id,raw_text,processed_json) VALUES($1,$2,$3::jsonb)', [imageId, image.rawText, JSON.stringify(data.entries)]));
+  }
+  await sql.transaction(queries);
+  return json(201, { id: snapshotId, entries: uniqueEntries.size });
 }
 
 const auditQuery = (operation, entity, id, before, after, ipHash) => ({ text: 'INSERT INTO audit_logs(operation, entity_type, entity_id, previous_value, new_value, actor_ip_hash) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6)', params: [operation, entity, id, JSON.stringify(before), JSON.stringify(after), ipHash] });
@@ -30,6 +59,14 @@ async function mutate(sql, route, payload, ipHash) {
   }
 
   if (route === 'factions') {
+    if (action === 'promote') {
+      if (!validUuid(data.gangId)) return json(400, { error: 'Gangue inválida.' });
+      const gang = await sql.query('SELECT * FROM gangs WHERE id=$1', [data.gangId]); if (!gang.length) return json(404, { error: 'Gangue não encontrada.' });
+      const newRecord = { id: randomUUID(), gangId: data.gangId, name: gang[0].canonical_name };
+      const audit = auditQuery('FACTION_PROMOTE', 'organization_faction', newRecord.id, null, newRecord, ipHash);
+      await sql.transaction([sql.query("INSERT INTO organization_factions(id,gang_id,name,normalized_name,status) VALUES($1,$2,$3,$4,'active')", [newRecord.id, data.gangId, gang[0].canonical_name, gang[0].normalized_name]), sql.query(audit.text, audit.params)]);
+      return json(201, newRecord);
+    }
     if (action === 'create') {
       const value = cleanFaction(data); if (!value) return json(400, { error: 'Dados da FAC inválidos.' });
       const newRecord = { id: randomUUID(), ...value };
@@ -74,6 +111,14 @@ async function mutate(sql, route, payload, ipHash) {
 
   if (route === 'blacklist' || route === 'allies') {
     const type = route === 'blacklist' ? 'blacklist' : 'official_ally';
+    if (action === 'promote' && type === 'blacklist') {
+      if (!validUuid(data.gangId)) return json(400, { error: 'Gangue inválida.' });
+      const gang = await sql.query('SELECT * FROM gangs WHERE id=$1', [data.gangId]); if (!gang.length) return json(404, { error: 'Gangue não encontrada.' });
+      const newRecord = { id: randomUUID(), gangId: data.gangId, name: gang[0].canonical_name };
+      const audit = auditQuery('BLACKLIST_PROMOTE', 'external_relation', newRecord.id, null, newRecord, ipHash);
+      await sql.transaction([sql.query("INSERT INTO external_relations(id,gang_id,name,normalized_name,relation_type,status) VALUES($1,$2,$3,$4,'blacklist','active')", [newRecord.id, data.gangId, gang[0].canonical_name, gang[0].normalized_name]), sql.query(audit.text, audit.params)]);
+      return json(201, newRecord);
+    }
     if (action === 'create') {
       const name = cleanText(data.name, 100); if (!name || !validStatus(data.status || 'active')) return json(400, { error: 'Dados inválidos.' });
       const newRecord = { id: randomUUID(), name, normalizedName: normalizeName(name), relationType: type, status: data.status || 'active', notes: cleanText(data.notes) || null };
@@ -104,6 +149,7 @@ export const handler = async (event) => {
     if (event.httpMethod === 'GET') return json(200, await readData(sql, route));
     if (!['POST', 'PUT', 'DELETE'].includes(event.httpMethod)) return json(405, { error: 'Método não permitido.' });
     const payload = JSON.parse(event.body || '{}');
+    if (route === 'diplomacy-submit' && event.httpMethod === 'POST') return submitDiplomacy(sql, payload);
     const auth = await authorizeMutation({ sql, credential: payload.credential, ip: getIp(event), bootstrapCredential: process.env.ADMIN_ACTION_CREDENTIAL });
     if (!auth.ok) return json(auth.status, { error: auth.status === 429 ? 'Muitas tentativas. Aguarde antes de tentar novamente.' : 'Credencial inválida.' });
     return await mutate(sql, route, payload, auth.ipHash);

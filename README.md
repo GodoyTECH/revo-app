@@ -37,3 +37,17 @@ npm run migrate
 ```
 
 A aplicação local fica em `http://localhost:4173`. Para dados reais, use Netlify Dev ou um deploy, pois `/api/*` é atendido pelas Netlify Functions.
+
+## Diplomacia, OCR e snapshots
+
+O fluxo principal fica em **OCR** na navegação: selecione primeiro a FAC oficial de origem, escolha **Inimigos** ou **Aliados**, envie até cinco PNG/JPEG/WEBP e revise cada nome antes de confirmar. O OCR é executado no navegador pelo `Tesseract.js` (worker WebAssembly, idioma português); as imagens passam por resize, grayscale/contraste e imagens longas são segmentadas. Nenhuma leitura bruta é confirmada automaticamente. O upload persiste apenas metadados, SHA-256 e texto OCR — não o arquivo binário.
+
+A migration incremental `002_diplomacy_ocr.sql` reutiliza `organization_factions`, `external_relations` e `audit_logs`, adiciona a entidade mestre `gangs`, aliases, snapshots separados por `ALLY`/`ENEMY`, entradas, imagens e resultados OCR. Ela vincula os registros antigos sem removê-los. Um snapshot `COMPLETE` novo se torna a situação atual somente do mesmo tipo e origem; os anteriores continuam no histórico.
+
+- **Inimigos** são calculados pelas entradas do snapshot `ENEMY` confirmado mais recente de cada FAC. “Tem guerra com” nunca é texto persistido.
+- **Blacklist** continua independente e administrável. Sua promoção exige a credencial de seis dígitos; sair da Blacklist não apaga snapshots de inimigos.
+- **Aliados** são calculados pelas entradas `ALLY`. A coincidência divide as FACs de origem pelo total de FACs oficiais ativas; quando o alvo já é uma FAC oficial, ela própria é retirada do denominador.
+- **Adicionar à Organização** reutiliza o mesmo `gang_id`, exige credencial no backend e gera audit log; nunca ocorre silenciosamente.
+- O backend valida IDs, tipos, limites (5 imagens/250 nomes), hashes e MIME. Hash repetido é recusado como possível duplicidade.
+
+A migration deve ser aplicada com `npm run migrate` usando `DATABASE_URL`. O OCR precisa de acesso ao CDN do Tesseract na primeira execução para carregar o worker e os dados do idioma; depois o navegador pode reutilizar o cache HTTP.
