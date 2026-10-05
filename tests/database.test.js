@@ -27,3 +27,13 @@ test('Blacklist seed contains exactly the nine official entries', async () => {
   assert.deepEqual(seed, expected);
   assert.equal(new Set(seed).size, 9);
 });
+
+test('complete Neon setup contains both migrations and migration tracking', async () => {
+  const sql = await readFile('database/neon-complete-setup.sql', 'utf8');
+  assert.match(sql, /BEGIN;/);
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS organization_factions/);
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS diplomacy_snapshots/);
+  assert.match(sql, /001_organization_factions\.sql/);
+  assert.match(sql, /002_diplomacy_ocr\.sql/);
+  assert.match(sql, /COMMIT;/);
+});

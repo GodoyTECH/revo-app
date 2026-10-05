@@ -15,13 +15,21 @@ Central Diplomática responsiva e instalável, pronta para Netlify e Neon Postgr
 
 1. Use Node.js 20 ou superior e execute `npm install`.
 2. Configure `DATABASE_URL` com a conexão do Neon.
-3. Configure `ADMIN_ACTION_CREDENTIAL` no painel seguro de variáveis do Netlify com uma credencial inicial de exatamente seis dígitos. **Nunca coloque a credencial no Git, README ou frontend.** Depois do primeiro uso autorizado, somente o hash é mantido no banco.
-4. Execute `npm run migrate`. A migration é incremental, não apaga dados e registra cada arquivo em `schema_migrations`.
+3. Crie você mesmo uma credencial inicial de exatamente seis dígitos (não existe senha padrão no código) e configure-a no Netlify como `ADMIN_ACTION_CREDENTIAL`. **Nunca coloque o valor no Git, README, Neon ou frontend.** No primeiro uso autorizado, o backend grava somente um hash `scrypt` no banco; a partir daí, esse hash passa a ser a fonte de autenticação.
+4. Aplique o banco de uma destas formas: execute `npm run migrate`; ou copie todo o arquivo `database/neon-complete-setup.sql` para o **Neon SQL Editor** e clique em **Run**. Não execute as duas opções na primeira instalação. O SQL completo é incremental, preserva dados e registra as migrations em `schema_migrations`.
 5. Execute `npm run build` ou faça deploy pelo `netlify.toml`.
 
-Para trocar a credencial, a API oferece a operação protegida `credential/change`, que valida a atual na mesma requisição, confere a confirmação e grava apenas um novo hash.
+### Credencial administrativa
+
+Não foi colocada nenhuma credencial fixa ou padrão no projeto. No Netlify, acesse **Site configuration → Environment variables**, crie `ADMIN_ACTION_CREDENTIAL` e defina um valor escolhido por você com exatamente seis números (por exemplo, escolha um valor próprio; não reutilize exemplos da documentação). Faça um novo deploy após salvar a variável.
+
+Na primeira ação administrativa, a Netlify Function compara a credencial enviada com `ADMIN_ACTION_CREDENTIAL`. Se estiver correta, gera um salt aleatório, calcula o hash com `scrypt` e salva somente `scrypt:<salt>:<hash>` em `app_security_settings`; a credencial em texto puro não é salva no Neon. Depois disso, a autenticação usa o hash do banco, com comparação resistente a timing attack. Após cinco falhas do mesmo IP em 15 minutos, novas tentativas ficam temporariamente bloqueadas.
+
+Para trocar a credencial, use **Admin → Alterar credencial**. A operação protegida `credential/change` valida a credencial atual, confere a nova e sua confirmação, e grava somente o novo hash. Depois da inicialização, alterar apenas `ADMIN_ACTION_CREDENTIAL` no Netlify **não** troca a credencial já registrada; use o fluxo da aplicação. Se perder a credencial, será necessário remover deliberadamente a linha `action_credential_hash` do banco e então cadastrar uma nova variável de bootstrap no Netlify.
 
 ## Migration e seed
+
+Para instalação manual no Neon, use o script consolidado `database/neon-complete-setup.sql`. Ele contém integralmente as migrations 001 e 002, o seed oficial da Blacklist e o registro idempotente em `schema_migrations`. Não é necessário criar a credencial no SQL.
 
 `migrations/001_organization_factions.sql` cria `organization_factions`, a relação ilimitada `organization_faction_members`, relações externas, configurações seguras, tentativas e audit logs. O seed da Blacklist usa chave única e `ON CONFLICT DO NOTHING`, portanto pode rodar novamente sem duplicar registros.
 
