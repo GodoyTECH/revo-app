@@ -38,7 +38,7 @@
           <span><strong>REVOLUCIONÁRIOS</strong><small>Central Diplomática</small></span>
         </a>
         <nav aria-label="Navegação principal">
-          <a class="active" href="#inicio">Início</a><a href="#facs">FACs</a><a href="#blacklist">Blacklist</a><a href="#status">Histórico</a>
+          <a class="active" href="#inicio">Início</a><a href="#ocr">OCR</a><a href="#inimigos">Inimigos</a><a href="#blacklist">Blacklist</a><a href="#aliados">Aliados</a><a href="#facs">FACs</a>
         </nav>
         <button class="menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i></i><i></i><i></i></button>
       </header>
@@ -52,12 +52,29 @@
           <p class="subtitle">CENTRAL DIPLOMÁTICA</p>
           <p class="intro">Inteligência, estratégia e comunicação em uma plataforma segura para decisões que movem a organização.</p>
           <div class="actions">
-            <button class="button primary" type="button" data-action="send"><span class="button-icon">✦</span> ENVIAR DIPLOMACIA</button>
+            <a class="button primary" href="#ocr"><span class="button-icon">▣</span> ENVIAR LISTA POR OCR</a>
             <button class="button secondary" type="button" data-action="consult"><span class="button-icon">⌕</span> CONSULTAR DIPLOMACIA</button>
             <button class="button ghost" id="installButton" type="button"><span class="button-icon">↓</span> INSTALAR APP</button>
           </div>
           <div class="secure"><span>◆</span> AMBIENTE SEGURO E CRIPTOGRAFADO <span>◆</span></div>
         </section>
+
+        <section class="ocr-section" id="ocr" aria-labelledby="ocr-title">
+          <div class="section-heading relations-heading"><div><span class="kicker">LEITURA INTELIGENTE</span><h2 id="ocr-title">Enviar lista por OCR</h2><p class="section-description">Print → OCR real no navegador → revisão humana → banco.</p></div><span class="live"><i></i> SEM API PAGA</span></div>
+          <div class="ocr-wizard">
+            <div class="step"><b>1</b><label>Qual FAC é dona desta lista?<select id="ocrFaction" required><option value="">Selecione a FAC de origem</option></select></label></div>
+            <div class="step"><b>2</b><fieldset><legend>Qual lista você está enviando?</legend><div class="choice-row"><label><input type="radio" name="relationType" value="ENEMY" checked /> ⚔ Inimigos</label><label><input type="radio" name="relationType" value="ALLY" /> 🤝 Aliados</label></div></fieldset></div>
+            <div class="step"><b>3</b><div class="upload-zone" id="uploadZone" tabindex="0"><strong>📷 ADICIONAR PRINTS</strong><span>Câmera, galeria ou arraste aqui · PNG, JPG ou WEBP · até 5 imagens</span><input id="ocrFiles" type="file" accept="image/png,image/jpeg,image/webp" capture="environment" multiple /></div></div>
+            <div id="imagePreviews" class="image-previews"></div>
+            <button class="button primary" id="processOcr" type="button" disabled>PROCESSAR OCR</button>
+            <div class="ocr-progress" id="ocrProgress" hidden><progress max="100" value="0"></progress><strong>Preparando imagem...</strong><small></small></div>
+            <div class="ocr-review" id="ocrReview" hidden><div class="manager-title"><div><span class="kicker">REVISÃO HUMANA OBRIGATÓRIA</span><h3>Revisar leitura</h3></div><span class="badge badge-success">LISTA COMPLETA</span></div><div id="ocrRows"></div><button class="text-button" id="addOcrRow" type="button">＋ ADICIONAR MANUALMENTE</button><div class="form-actions"><button class="button primary" id="confirmOcr" type="button">CONFIRMAR LISTA</button></div></div>
+          </div>
+        </section>
+
+        <section class="relations diplomacy-area enemy-area" id="inimigos"><div class="section-heading"><div><span class="kicker">⚔ GUERRAS PARTICULARES / COMPARTILHADAS</span><h2>Inimigos</h2><p class="section-description">Consolidação calculada pelos snapshots atuais de cada FAC.</p></div></div><div class="relation-list" id="enemyList"></div><div class="empty-state" id="enemyEmpty"><span>⚔</span><strong>Nenhum inimigo confirmado</strong><small>Envie a primeira lista pelo OCR.</small></div></section>
+
+        <section class="relations diplomacy-area ally-area" id="aliados"><div class="section-heading"><div><span class="kicker">🤝 RELAÇÕES POSITIVAS</span><h2>Aliados</h2><p class="section-description">Coincidência entre todas as FACs oficiais ativas.</p></div></div><div class="relation-list" id="allyList"></div><div class="empty-state" id="allyEmpty"><span>🤝</span><strong>Nenhum aliado confirmado</strong><small>Envie a primeira lista pelo OCR.</small></div></section>
 
         <section class="dashboard" id="operacoes" aria-labelledby="overview-title">
           <div class="section-heading"><div><span class="kicker">VISÃO GERAL</span><h2 id="overview-title">Painel de operações</h2></div><span class="live"><i></i> SISTEMA OPERACIONAL</span></div>
@@ -106,6 +123,8 @@
           </div>
         </section>
       </main>
+
+      <footer class="site-footer"><img src="/logo-web.png" alt="" /><p>Desenvolvido por <strong>Godoy Solutions in Tech</strong> · Cadu Godoy</p></footer>
 
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
         <div class="modal-card"><button class="modal-close" aria-label="Fechar">×</button><span class="kicker">CENTRAL DIPLOMÁTICA</span><h2 id="modalTitle"></h2><p id="modalText"></p><button class="button primary modal-ok">ENTENDIDO</button></div>
