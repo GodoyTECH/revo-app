@@ -7,3 +7,8 @@ npm-debug.log*
 logo.png
 public/icons/
 public/logo-web.png
+
+# Segredos locais; apenas o modelo sem valores reais pode ser versionado.
+.env
+.env.*
+!.env.example
