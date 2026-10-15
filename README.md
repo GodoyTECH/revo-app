@@ -21,9 +21,6 @@ Central Diplomática responsiva e instalável, pronta para Netlify e Neon Postgr
 
 ### Credencial administrativa
 
-**Resposta direta:** não existe uma credencial inicial predefinida. Você deve escolher qualquer sequência pessoal de exatamente seis dígitos. Por exemplo, se você escolher `384729`, deverá cadastrar `ADMIN_ACTION_CREDENTIAL=384729` no Netlify e digitar `384729` nas ações administrativas. **Não use `384729` em produção**, pois ele aparece publicamente nesta documentação; gere outro valor exclusivo.
-
-No Netlify, acesse **Site configuration → Environment variables**, crie `ADMIN_ACTION_CREDENTIAL`, informe os seis números escolhidos e faça um novo deploy. O arquivo `.env.example` mostra apenas o formato esperado e nunca deve receber o segredo real no Git.
 
 Na primeira ação administrativa, a Netlify Function compara a credencial enviada com `ADMIN_ACTION_CREDENTIAL`. Se estiver correta, gera um salt aleatório, calcula o hash com `scrypt` e salva somente `scrypt:<salt>:<hash>` em `app_security_settings`; a credencial em texto puro não é salva no Neon. Depois disso, a autenticação usa o hash do banco, com comparação resistente a timing attack. Após cinco falhas do mesmo IP em 15 minutos, novas tentativas ficam temporariamente bloqueadas.
 

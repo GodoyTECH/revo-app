@@ -64,7 +64,19 @@
           <div class="ocr-wizard">
             <div class="step"><b>1</b><label>Qual FAC é dona desta lista?<select id="ocrFaction" required><option value="">Selecione a FAC de origem</option></select></label></div>
             <div class="step"><b>2</b><fieldset><legend>Qual lista você está enviando?</legend><div class="choice-row"><label><input type="radio" name="relationType" value="ENEMY" checked /> ⚔ Inimigos</label><label><input type="radio" name="relationType" value="ALLY" /> 🤝 Aliados</label></div></fieldset></div>
-            <div class="step"><b>3</b><div class="upload-zone" id="uploadZone" tabindex="0"><strong>📷 ADICIONAR PRINTS</strong><span>Câmera, galeria ou arraste aqui · PNG, JPG ou WEBP · até 5 imagens</span><input id="ocrFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple /></div></div>
+<div class="step">
+  <b>3</b>
+  <div class="upload-zone" id="uploadZone" tabindex="0">
+    <strong>📷 ADICIONAR PRINTS</strong>
+    <span>Câmera, galeria ou arraste aqui · PNG, JPG ou WEBP · até 5 imagens</span>
+    <input
+      id="ocrFiles"
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      multiple
+    />
+  </div>
+</div>
             <div id="imagePreviews" class="image-previews"></div>
             <button class="button primary" id="processOcr" type="button" disabled>PROCESSAR OCR</button>
             <div class="ocr-progress" id="ocrProgress" hidden><progress max="100" value="0"></progress><strong>Preparando imagem...</strong><small></small></div>
