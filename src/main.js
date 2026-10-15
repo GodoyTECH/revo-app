@@ -1,6 +1,6 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { factions: [], blacklist: [], filter: 'all', currentFaction: null, pendingOperation: null };
+const state = { factions: [], blacklist: [], diplomacy: [], ocrFiles: [], ocrImages: [], ocrRows: [], filter: 'all', currentFaction: null, pendingOperation: null };
 const esc = (value = '') => { const node = document.createElement('span'); node.textContent = value; return node.innerHTML; };
 const formatDate = (value) => value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—';
 const whatsappDigits = (value) => String(value || '').replace(/\D/g, '');
@@ -26,7 +26,8 @@ async function loadData() {
     $('#factionCount').textContent = state.factions.length;
     $('#activeFactionCount').textContent = state.factions.filter((item) => item.status === 'active').length;
     $('#blacklistCount').textContent = state.blacklist.filter((item) => item.status === 'active').length;
-    renderFactions(); renderBlacklist();
+    const diplomacy = await api('diplomacy'); state.diplomacy = diplomacy.gangs || [];
+    renderFactions(); renderBlacklist(); renderDiplomacy(); populateOcrFactions();
   } catch (error) {
     $('.factionList')?.replaceChildren();
     toast(error.status === 503 ? 'Configure o banco para carregar os dados.' : error.message, true);
@@ -36,6 +37,21 @@ async function loadData() {
     $('#relationLoading').hidden = true;
   }
 }
+
+function populateOcrFactions() {
+  $('#ocrFaction').innerHTML = '<option value="">Selecione a FAC de origem</option>' + state.factions.filter((f) => f.status === 'active').map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+}
+
+function renderDiplomacy() {
+  const activeCount = state.factions.filter((f) => f.status === 'active').length;
+  const card = (gang, type) => { const sources = type === 'enemy' ? gang.enemy_of : gang.ally_of; const conflict = gang.is_enemy && gang.is_ally; const denominator = gang.is_organization ? Math.max(0, activeCount - 1) : activeCount; const percentage = denominator ? Math.round(sources.length / denominator * 100) : 0; return `<article class="relation-card ${type}"><div class="relation-mark">${type === 'enemy' ? '⚔' : '🤝'}</div><div><span class="relation-type ${type}">${gang.blacklisted ? '🚫 BLACKLIST' : type === 'enemy' ? (sources.length === 1 ? 'GUERRA PARTICULAR' : 'GUERRA COMPARTILHADA') : percentage === 100 ? 'CANDIDATA À ORGANIZAÇÃO' : sources.length === 1 ? 'ALIADO EXCLUSIVO' : 'ALIADO COMPARTILHADO'}</span><h3>${esc(gang.name)}</h3>${conflict ? '<strong class="critical">⚠ DIVERGÊNCIA DIPLOMÁTICA</strong>' : ''}${gang.blacklisted && gang.is_ally ? '<strong class="critical">🚨 CONFLITO CRÍTICO: BLACKLIST X ALIADO</strong>' : ''}<p>${type === 'enemy' ? 'Tem guerra com' : 'Aliada de'}: ${sources.map((source) => esc(source.name)).join(' · ')}</p><small>${sources.length}/${type === 'ally' ? denominator : activeCount} FACs${type === 'ally' ? ` · ${percentage}% de coincidência` : ''}</small>${type === 'ally' && !gang.is_organization ? `<button class="text-button promote-org" data-gang="${gang.id}">ADICIONAR À ORGANIZAÇÃO</button>` : ''}${type === 'enemy' && !gang.blacklisted ? `<button class="text-button promote-blacklist" data-gang="${gang.id}">ADICIONAR À BLACKLIST</button>` : ''}</div></article>`; };
+  const enemies = state.diplomacy.filter((g) => g.is_enemy); const allies = state.diplomacy.filter((g) => g.is_ally);
+  $('#enemyList').innerHTML = enemies.map((g) => card(g, 'enemy')).join(''); $('#enemyEmpty').hidden = enemies.length > 0;
+  $('#allyList').innerHTML = allies.map((g) => card(g, 'ally')).join(''); $('#allyEmpty').hidden = allies.length > 0;
+}
+
+$('#allyList').addEventListener('click', (event) => { if (event.target.classList.contains('promote-org')) requestCredential((credential) => api('factions', { method: 'POST', body: JSON.stringify({ action: 'promote', data: { gangId: event.target.dataset.gang }, credential }) })); });
+$('#enemyList').addEventListener('click', (event) => { if (event.target.classList.contains('promote-blacklist')) requestCredential((credential) => api('blacklist', { method: 'POST', body: JSON.stringify({ action: 'promote', data: { gangId: event.target.dataset.gang }, credential }) })); });
 
 function memberBlocks(members = []) {
   return ['00', '01', '02'].map((role) => {
@@ -139,9 +155,37 @@ window.addEventListener('appinstalled', () => { installPrompt = null; installBut
 if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) installButton.hidden = true;
 installButton.addEventListener('click', async () => { if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) openInfo('Instalar no iPhone', 'Toque em Compartilhar no Safari e depois em “Adicionar à Tela de Início”.'); else openInfo('Instalar aplicativo', 'Abra o menu do navegador e selecione “Instalar app”.'); });
 $$('.modal-close, .modal-ok').forEach((button) => { if (!button.matches('.admin-close,.faction-close,.member-close')) button.addEventListener('click', closeInfo); });
-$('[data-action="send"]').addEventListener('click', () => openInfo('Enviar diplomacia', 'O canal seguro está pronto para receber uma nova solicitação diplomática.'));
 $('[data-action="consult"]').addEventListener('click', () => $('#blacklist').scrollIntoView({ behavior: 'smooth' }));
 const menu = $('.menu'), nav = $('nav'); menu.addEventListener('click', () => { const open = menu.getAttribute('aria-expanded') === 'true'; menu.setAttribute('aria-expanded', String(!open)); nav.classList.toggle('open', !open); });
 $$('nav a').forEach((link) => link.addEventListener('click', () => { nav.classList.remove('open'); menu.setAttribute('aria-expanded', 'false'); }));
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+
+const provider = new TesseractOcrProvider();
+const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
+function setOcrFiles(files) {
+  const accepted = [...files].filter((file) => allowedTypes.includes(file.type) && file.size <= 12 * 1024 * 1024).slice(0, 5);
+  state.ocrFiles = accepted; state.ocrImages = []; state.ocrRows = [];
+  $('#imagePreviews').innerHTML = accepted.map((file, index) => `<figure><img src="${URL.createObjectURL(file)}" alt="Preview ${index + 1}"/><figcaption>${esc(file.name)}<button type="button" data-remove-image="${index}" aria-label="Remover imagem">×</button></figcaption></figure>`).join('');
+  $('#processOcr').disabled = !accepted.length; $('#ocrReview').hidden = true;
+  if (accepted.length !== files.length) toast('Arquivos inválidos, acima de 12 MB ou além do limite foram ignorados.', true);
+}
+$('#ocrFiles').addEventListener('change', (event) => setOcrFiles(event.target.files));
+$('#uploadZone').addEventListener('dragover', (event) => { event.preventDefault(); event.currentTarget.classList.add('dragging'); });
+$('#uploadZone').addEventListener('dragleave', (event) => event.currentTarget.classList.remove('dragging'));
+$('#uploadZone').addEventListener('drop', (event) => { event.preventDefault(); event.currentTarget.classList.remove('dragging'); setOcrFiles(event.dataTransfer.files); });
+$('#imagePreviews').addEventListener('click', (event) => { if (event.target.dataset.removeImage !== undefined) { state.ocrFiles.splice(Number(event.target.dataset.removeImage), 1); setOcrFiles(state.ocrFiles); } });
+async function sha256(file) { const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer()); return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join(''); }
+function renderOcrRows() { $('#ocrRows').innerHTML = state.ocrRows.map((row, index) => `<div class="ocr-row"><label>Nome reconhecido<input data-ocr-name="${index}" value="${esc(row.name)}" maxlength="100" /></label><span class="confidence ${row.confidence < 70 ? 'low' : ''}">${row.confidence}%${row.confidence < 70 ? ' · Revisar' : ''}</span><button type="button" data-remove-row="${index}" aria-label="Remover">×</button></div>`).join(''); }
+$('#processOcr').addEventListener('click', async () => {
+  if (!$('#ocrFaction').value) return toast('Escolha primeiro a FAC dona da lista.', true);
+  $('#ocrProgress').hidden = false; $('#ocrReview').hidden = true; state.ocrRows = []; state.ocrImages = [];
+  try { for (let i = 0; i < state.ocrFiles.length; i++) { const file = state.ocrFiles[i]; $('#ocrProgress strong').textContent = `Executando OCR… Imagem ${i + 1} de ${state.ocrFiles.length}`; const result = await provider.recognize(file, (value) => { $('#ocrProgress progress').value = value; $('#ocrProgress small').textContent = `${value}% · extraindo gangues e normalizando nomes`; }); state.ocrRows.push(...result.rows); state.ocrImages.push({ fileName: file.name, mimeType: file.type, sha256: await sha256(file), rawText: result.rawText }); }
+    const unique = new Map(state.ocrRows.map((row) => [normalizeGangName(row.name), row])); state.ocrRows = [...unique.values()]; renderOcrRows(); $('#ocrReview').hidden = false; $('#ocrProgress strong').textContent = 'Preparando revisão…';
+  } catch (error) { toast(`OCR indisponível: ${error.message}. Verifique a conexão e tente novamente.`, true); } finally { $('#ocrProgress').hidden = true; }
+});
+$('#ocrRows').addEventListener('input', (event) => { if (event.target.dataset.ocrName !== undefined) state.ocrRows[Number(event.target.dataset.ocrName)].name = event.target.value; });
+$('#ocrRows').addEventListener('click', (event) => { if (event.target.dataset.removeRow !== undefined) { state.ocrRows.splice(Number(event.target.dataset.removeRow), 1); renderOcrRows(); } });
+$('#addOcrRow').addEventListener('click', () => { state.ocrRows.push({ name: '', originalText: 'Adição manual', confidence: 100 }); renderOcrRows(); $('#ocrRows input:last-of-type')?.focus(); });
+$('#confirmOcr').addEventListener('click', async () => { const entries = state.ocrRows.filter((row) => row.name.trim()).map((row) => ({ ...row, originalText: row.originalText || row.name })); if (!entries.length) return toast('Revise e mantenha ao menos uma gangue.', true); try { await api('diplomacy-submit', { method: 'POST', body: JSON.stringify({ sourceFactionId: $('#ocrFaction').value, relationType: $('input[name="relationType"]:checked').value, importMode: 'COMPLETE', entries, images: state.ocrImages }) }); toast('Lista confirmada e consolidada.'); const diplomacy = await api('diplomacy'); state.diplomacy = diplomacy.gangs || []; renderDiplomacy(); $('#ocrReview').hidden = true; } catch (error) { toast(error.message, true); } });
 loadData();
+import { TesseractOcrProvider, normalizeGangName } from './ocr-provider.js';

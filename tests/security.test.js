@@ -38,3 +38,10 @@ test('WhatsApp accepts only normalized safe phone numbers', () => {
   assert.equal(normalizeWhatsapp('javascript:alert(1)'), null);
   assert.equal(cleanMember({ name: 'Pessoa', role: '00', whatsapp: '<script>', status: 'active' }), null);
 });
+
+test('environment template documents credential format without shipping a default secret', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const template = await readFile('.env.example', 'utf8');
+  assert.match(template, /ADMIN_ACTION_CREDENTIAL=SUBSTITUA_POR_6_DIGITOS/);
+  assert.doesNotMatch(template, /ADMIN_ACTION_CREDENTIAL=\d{6}/);
+});
