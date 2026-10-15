@@ -26,11 +26,20 @@ export function cleanMember(data = {}) {
 }
 
 export function cleanDiplomacySubmission(data = {}) {
+  if (!data || typeof data !== 'object') return null;
   if (!validUuid(data.sourceFactionId) || !['ALLY', 'ENEMY'].includes(data.relationType) || data.importMode !== 'COMPLETE') return null;
-  if (!Array.isArray(data.entries) || data.entries.length < 1 || data.entries.length > 250) return null;
-  if (!Array.isArray(data.images) || data.images.length < 1 || data.images.length > 5) return null;
-  const entries = data.entries.map((entry) => ({ name: cleanText(entry.name, 100), originalText: cleanText(entry.originalText || entry.name, 160), confidence: Number(entry.confidence) })).filter((entry) => entry.name && Number.isFinite(entry.confidence) && entry.confidence >= 0 && entry.confidence <= 100);
-  const images = data.images.map((image) => ({ fileName: cleanText(image.fileName, 150), mimeType: image.mimeType, sha256: String(image.sha256 || '').toLowerCase(), rawText: cleanText(image.rawText, 20000) })).filter((image) => ['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) && /^[a-f0-9]{64}$/.test(image.sha256));
-  if (entries.length !== data.entries.length || images.length !== data.images.length) return null;
-  return { sourceFactionId: data.sourceFactionId, relationType: data.relationType, importMode: 'COMPLETE', entries, images };
+  if (!Array.isArray(data.entries) || data.entries.length > 250 || (data.images !== undefined && (!Array.isArray(data.images) || data.images.length))) return null;
+  if (data.status && data.status !== 'CONFIRMED') return null;
+  const source = data.inputSource || 'OCR';
+  if (!['OCR', 'MANUAL'].includes(source)) return null;
+  const entries = [];
+  for (const entry of data.entries) {
+    if (!entry || typeof entry !== 'object') return null;
+    if (typeof entry.name !== 'string' || !normalizeName(entry.name) || entry.name.trim().length > 100 || entry.confirmed !== true) return null;
+    if (typeof entry.originalText !== 'string' || entry.originalText.length > 160 || !Number.isFinite(entry.confidence) || entry.confidence < 0 || entry.confidence > 100) return null;
+    if (entry.gangId && !validUuid(entry.gangId)) return null;
+    if (entry.imageIndexes !== undefined && (!Array.isArray(entry.imageIndexes) || entry.imageIndexes.length)) return null;
+    entries.push({ name: entry.name.trim(), originalText: entry.originalText, confidence: entry.confidence, gangId: entry.gangId || null, confirmed: true });
+  }
+  return { sourceFactionId: data.sourceFactionId, relationType: data.relationType, importMode: 'COMPLETE', inputSource: source, entries };
 }

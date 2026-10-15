@@ -38,12 +38,13 @@
           <span><strong>REVOLUCIONÁRIOS</strong><small>Central Diplomática</small></span>
         </a>
         <nav aria-label="Navegação principal">
-          <a class="active" href="#inicio">Início</a><a href="#ocr">OCR</a><a href="#inimigos">Inimigos</a><a href="#blacklist">Blacklist</a><a href="#aliados">Aliados</a><a href="#facs">FACs</a>
+          <a class="active" href="#inicio">Início</a><a href="#ocr">OCR</a><a href="#inimigos">Inimigos</a><a href="#blacklist">Blacklist</a><a href="#aliados">Aliados</a><a href="#facs">FACs</a><a href="#divergencias">Divergências</a><a href="#historico">Histórico</a><a href="#admin">Admin</a>
         </nav>
         <button class="menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i></i><i></i><i></i></button>
       </header>
 
       <main>
+        <p id="dataError" role="alert" hidden></p>
         <section class="hero" id="inicio">
           <div class="orb orb-one"></div><div class="orb orb-two"></div>
           <div class="eyebrow"><span></span> SISTEMA OFICIAL DE COMUNICAÇÃO</div>
@@ -66,21 +67,23 @@
             <div class="step"><b>2</b><fieldset><legend>Qual lista você está enviando?</legend><div class="choice-row"><label><input type="radio" name="relationType" value="ENEMY" checked /> ⚔ Inimigos</label><label><input type="radio" name="relationType" value="ALLY" /> 🤝 Aliados</label></div></fieldset></div>
 <div class="step">
   <b>3</b>
-  <div class="upload-zone" id="uploadZone" tabindex="0">
-    <strong>📷 ADICIONAR PRINTS</strong>
-    <span>Câmera, galeria ou arraste aqui · PNG, JPG ou WEBP · até 5 imagens</span>
+  <label class="upload-zone" id="uploadZone">
+    <strong>▣ ADICIONAR PRINTS</strong>
+    <span>Galeria ou seletor de arquivos · PNG, JPEG ou WEBP · até 5 imagens de 12 MB</span>
     <input
+      aria-label="Adicionar prints da galeria"
       id="ocrFiles"
       type="file"
       accept="image/png,image/jpeg,image/webp"
       multiple
     />
-  </div>
+  </label>
 </div>
-            <div id="imagePreviews" class="image-previews"></div>
-            <button class="button primary" id="processOcr" type="button" disabled>PROCESSAR OCR</button>
-            <div class="ocr-progress" id="ocrProgress" hidden><progress max="100" value="0"></progress><strong>Preparando imagem...</strong><small></small></div>
+            <p id="uploadErrors" role="alert"></p><div id="imagePreviews" class="image-previews"></div>
+            <button class="text-button" id="manualList" type="button">CRIAR LISTA MANUAL</button><button class="button primary" id="processOcr" type="button" disabled>PROCESSAR OCR</button>
+            <div class="ocr-progress" id="ocrProgress" role="status" hidden><progress aria-label="Progresso do OCR" max="100" value="0"></progress><strong>Preparando imagem...</strong><small></small></div>
             <div class="ocr-review" id="ocrReview" hidden><div class="manager-title"><div><span class="kicker">REVISÃO HUMANA OBRIGATÓRIA</span><h3>Revisar leitura</h3></div><span class="badge badge-success">LISTA COMPLETA</span></div><div id="ocrRows"></div><button class="text-button" id="addOcrRow" type="button">＋ ADICIONAR MANUALMENTE</button><div class="form-actions"><button class="button primary" id="confirmOcr" type="button">CONFIRMAR LISTA</button></div></div>
+            <div id="ocrSummary" role="status"></div>
           </div>
         </section>
 
@@ -90,11 +93,12 @@
 
         <section class="dashboard" id="operacoes" aria-labelledby="overview-title">
           <div class="section-heading"><div><span class="kicker">VISÃO GERAL</span><h2 id="overview-title">Painel de operações</h2></div><span class="live"><i></i> SISTEMA OPERACIONAL</span></div>
-          <div class="cards">
+          <div class="cards" id="dashboardCards">
             <article class="card"><div class="card-icon gold">⌁</div><div><small>FACs DA ORGANIZAÇÃO</small><strong id="factionCount">—</strong><span>FACs cadastradas</span></div></article>
             <article class="card"><div class="card-icon blue">◈</div><div><small>FACs ATIVAS</small><strong id="activeFactionCount">—</strong><span>Operando na organização</span></div></article>
             <article class="card"><div class="card-icon silver">!</div><div><small>BLACKLIST OFICIAL</small><strong id="blacklistCount">—</strong><span>Inimigos monitorados</span></div></article>
           </div>
+          <div id="priorityAlerts"></div>
         </section>
 
         <section class="factions" id="facs" aria-labelledby="factions-title">
@@ -126,14 +130,11 @@
           <div class="empty-state" id="emptyState" hidden><span>◇</span><strong>Nenhum registro encontrado</strong><small>Altere o filtro ou adicione uma nova relação.</small></div>
         </section>
 
-        <section class="recent" id="status" aria-labelledby="recent-title">
-          <div class="section-heading"><div><span class="kicker">ATIVIDADE</span><h2 id="recent-title">Movimentações recentes</h2></div><button type="button" class="text-button">VER TODAS →</button></div>
-          <div class="activity-list">
-            <article><span class="status-dot success"></span><div><strong>Acordo de cooperação aprovado</strong><small>Protocolo #RV-0428 · Conselho Estratégico</small></div><time>Há 2h</time></article>
-            <article><span class="status-dot pending"></span><div><strong>Nova diplomacia recebida</strong><small>Protocolo #RV-0431 · Aguardando análise</small></div><time>Há 5h</time></article>
-            <article><span class="status-dot info"></span><div><strong>Reunião de alinhamento agendada</strong><small>Comitê Central · 08 out, 19:00</small></div><time>Ontem</time></article>
-          </div>
-        </section>
+        <section class="relations" id="divergencias"><h2>Divergências diplomáticas</h2><p>Corrija a lista da FAC envolvida; os alertas usam apenas snapshots atuais.</p><div id="conflictList" class="relation-list"></div></section>
+        <section class="relations" id="historico"><h2>Histórico de listas</h2><div id="historyList"></div></section>
+        <section class="relations" id="fac"><div id="factionDetail"></div></section>
+        <section class="relations" id="gangue"><div id="gangDetail"></div></section>
+        <section class="relations" id="admin"><h2>Administração</h2><p>Alterações administrativas continuam protegidas por credencial no backend.</p><button class="button secondary" id="openBlacklistAdmin">GERENCIAR BLACKLIST</button></section>
       </main>
 
       <footer class="site-footer"><img src="/logo-web.png" alt="" /><p>Desenvolvido por <strong>Godoy Solutions in Tech</strong> · Cadu Godoy</p></footer>

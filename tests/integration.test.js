@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { PGlite } from '@electric-sql/pglite';
+import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { submitDiplomacy, readData, reserveSubmission } from '../netlify/functions/api.mjs';
+import { cleanDiplomacySubmission } from '../netlify/functions/lib/validation.mjs';
+const faction='11111111-1111-4111-8111-111111111111', other='22222222-2222-4222-8222-222222222222';
+const make=(type,names,inputSource='MANUAL')=>({sourceFactionId:faction,relationType:type,importMode:'COMPLETE',inputSource,images:[],entries:names.map((name)=>({name,originalText:name,confidence:99,confirmed:true,imageIndexes:[]}))});
+test('actual PostgreSQL migrations, submissions, aliases, isolation, provenance and rollback', async()=>{
+ const db=new PGlite({extensions:{pgcrypto}});
+ try {
+  const setup=await readFile('database/neon-complete-setup.sql','utf8');
+  await db.exec(setup); await db.exec(setup);
+  await db.exec(await readFile('database/neon-upgrade-003.sql','utf8'));
+  await db.exec(await readFile('database/neon-upgrade-003.sql','utf8'));
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM external_relations')).rows[0].count,9);
+  const sql={query:(text,params=[])=>({text,params,then(resolve,reject){return db.query(text,params).then((r)=>r.rows).then(resolve,reject);}}),transaction:(queries)=>db.transaction(async(tx)=>{const results=[];for(const q of queries) results.push((await tx.query(q.text,q.params)).rows);return results;})};
+  await db.query("INSERT INTO organization_factions(id,name,normalized_name) VALUES($1,'GODDOY R.K','GODDOY R K'),($2,'FAMÍLIA RJ','FAMILIA RJ')",[faction,other]);
+  assert.equal((await submitDiplomacy(sql,make('ENEMY',['FAC X']),'test')).statusCode,201);
+  assert.equal((await submitDiplomacy(sql,make('ALLY',['FAC B']),'test')).statusCode,201);
+  const gang=(await db.query("SELECT id FROM gangs WHERE normalized_name='FAC B'")).rows[0].id;
+  await db.query("INSERT INTO gang_aliases(gang_id,alias,normalized_alias) VALUES($1,'Apelido B','APELIDO B')",[gang]);
+  const aliased=make('ALLY',['FAC B','Apelido B']); aliased.entries[1].originalText='Apelido B';
+  assert.equal(JSON.parse((await submitDiplomacy(sql,aliased,'test')).body).entries,1);
+  assert.equal((await db.query("SELECT count(*)::int AS n FROM gangs WHERE normalized_name='APELIDO B'")).rows[0].n,0);
+  let diplomacy=await readData(sql,'diplomacy');
+  assert.equal(diplomacy.gangs.find((g)=>g.name==='FAC X').is_enemy,true);
+  assert.equal(diplomacy.gangs.find((g)=>g.name==='FAC B').is_ally,true);
+  assert.equal(diplomacy.history[0].entries[0].provenance.length,2);
+  const rival={...make('ENEMY',['FAC B']),sourceFactionId:other}; await submitDiplomacy(sql,rival,'test');
+  diplomacy=await readData(sql,'diplomacy'); let conflict=diplomacy.gangs.find((g)=>g.id===gang);
+  assert.equal(conflict.divergence,true); assert.equal(conflict.ally_of[0].name,'GODDOY R.K'); assert.equal(conflict.enemy_of[0].name,'FAMÍLIA RJ');
+  await db.query("INSERT INTO external_relations(name,normalized_name,relation_type,status,gang_id) VALUES('FAC B','FAC B','blacklist','active',$1)",[gang]);
+  diplomacy=await readData(sql,'diplomacy'); assert.equal(diplomacy.gangs.find((g)=>g.id===gang).critical,true);
+  // A manual removal is an empty COMPLETE snapshot, preserving all older entries.
+  await submitDiplomacy(sql,make('ALLY',[]),'test'); diplomacy=await readData(sql,'diplomacy');
+  conflict=diplomacy.gangs.find((g)=>g.id===gang); assert.equal(conflict.divergence,false);assert.equal(conflict.critical,false);assert.equal(conflict.is_enemy,true);
+  assert.equal(diplomacy.gangs.find((g)=>g.name==='FAC X').is_enemy,true);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM submission_images')).rows[0].n,0);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM ocr_results')).rows[0].n,0);
+  const oldCount=(await db.query('SELECT count(*)::int AS n FROM diplomacy_snapshots')).rows[0].n;
+  const badSql={...sql,transaction:(queries)=>sql.transaction([...queries,sql.query('SELECT 1/0')])};
+  await assert.rejects(()=>submitDiplomacy(badSql,make('ENEMY',['ROLLBACK']),'test'));
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM diplomacy_snapshots')).rows[0].n,oldCount);
+  assert.equal((await db.query("SELECT count(*)::int AS n FROM gangs WHERE normalized_name='ROLLBACK'")).rows[0].n,0);
+  for (let i=0;i<20;i++) assert.equal(await reserveSubmission(sql,'rate-test'),true);
+  assert.equal(await reserveSubmission(sql,'rate-test'),false);
+  assert.equal(await reserveSubmission(sql,'another-ip'),true);
+  assert.equal((await db.query("SELECT count(*)::int AS n FROM audit_logs WHERE operation='DIPLOMACY_CONFIRM'")).rows[0].n,oldCount);
+ }finally{await db.close();}
+});
+test('backend rejects unreviewed names, oversized metadata, wrong IDs and duplicate hashes',()=>{
+ const good=make('ALLY',['FAC X']);assert.ok(cleanDiplomacySubmission(good));
+ for(const entry of [{...good.entries[0],confirmed:false},{...good.entries[0],name:'X'.repeat(101)},{...good.entries[0],gangId:'bad'},{...good.entries[0],imageIndexes:[0]}]) assert.equal(cleanDiplomacySubmission({...good,entries:[entry]}),null);
+ const image={fileName:'print.png',mimeType:'image/png',sha256:'a'.repeat(64),size:100,rawText:'FAC X'};
+ assert.ok(cleanDiplomacySubmission({...good,inputSource:'OCR'}));
+ assert.equal(cleanDiplomacySubmission({...good,inputSource:'OCR',images:[image]}),null);
+ assert.equal(cleanDiplomacySubmission({...good,images:[image,image]}),null);
+ assert.equal(cleanDiplomacySubmission({...good,images:[{...image,size:13*1024*1024}]}),null);
+});

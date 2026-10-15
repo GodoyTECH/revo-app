@@ -28,7 +28,7 @@ Para trocar a credencial, use **Admin → Alterar credencial**. A operação pro
 
 ## Migration e seed
 
-Para instalação manual no Neon, use o script consolidado `database/neon-complete-setup.sql`. Ele contém integralmente as migrations 001 e 002, o seed oficial da Blacklist e o registro idempotente em `schema_migrations`. Não é necessário criar a credencial no SQL.
+Para instalação manual no Neon, use o script consolidado `database/neon-complete-setup.sql`. Ele contém integralmente as migrations 001, 002 e 003, o seed oficial da Blacklist e o registro idempotente em `schema_migrations`. Não é necessário criar a credencial no SQL.
 
 `migrations/001_organization_factions.sql` cria `organization_factions`, a relação ilimitada `organization_faction_members`, relações externas, configurações seguras, tentativas e audit logs. O seed da Blacklist usa chave única e `ON CONFLICT DO NOTHING`, portanto pode rodar novamente sem duplicar registros.
 
@@ -45,16 +45,63 @@ npm run migrate
 
 A aplicação local fica em `http://localhost:4173`. Para dados reais, use Netlify Dev ou um deploy, pois `/api/*` é atendido pelas Netlify Functions.
 
-## Diplomacia, OCR e snapshots
+## Galeria, OCR local e inclusão manual
 
-O fluxo principal fica em **OCR** na navegação: selecione primeiro a FAC oficial de origem, escolha **Inimigos** ou **Aliados**, envie até cinco PNG/JPEG/WEBP e revise cada nome antes de confirmar. O OCR é executado no navegador pelo `Tesseract.js` (worker WebAssembly, idioma português); as imagens passam por resize, grayscale/contraste e imagens longas são segmentadas. Nenhuma leitura bruta é confirmada automaticamente. O upload persiste apenas metadados, SHA-256 e texto OCR — não o arquivo binário.
+Abra `/#ocr`, escolha a FAC ativa e **Aliados** ou **Inimigos**. **Adicionar prints** abre o seletor nativo de fotos/arquivos: o input aceita PNG, JPG/JPEG e WEBP, é múltiplo e não usa `capture`. O sistema operacional pode oferecer uma opção de câmera; o app não a exige. A área é um label clicável, funciona com teclado e mantém drag-and-drop no computador. São permitidos até cinco arquivos, 12 MB por arquivo e 24 megapixels por imagem. Há preview, nome local, remoção e nova seleção do mesmo arquivo. Formato, tamanho, quantidade, imagem corrompida, preview e OCR têm erros distintos.
 
-A migration incremental `002_diplomacy_ocr.sql` reutiliza `organization_factions`, `external_relations` e `audit_logs`, adiciona a entidade mestre `gangs`, aliases, snapshots separados por `ALLY`/`ENEMY`, entradas, imagens e resultados OCR. Ela vincula os registros antigos sem removê-los. Um snapshot `COMPLETE` novo se torna a situação atual somente do mesmo tipo e origem; os anteriores continuam no histórico.
+O Tesseract.js 6, seu worker, WASM e idioma português são servidos pelo próprio app em `/vendor/`, preparados no build. O OCR roda no navegador: redução de resolução, contraste, segmentação e reconhecimento. As regiões são convertidas para PNG **somente na memória**. O processamento de pixels cede tempo à interface. Não há serviço externo de OCR nem dependência de CDN para o motor. A primeira leitura precisa baixar os assets do próprio site.
 
-- **Inimigos** são calculados pelas entradas do snapshot `ENEMY` confirmado mais recente de cada FAC. “Tem guerra com” nunca é texto persistido.
-- **Blacklist** continua independente e administrável. Sua promoção exige a credencial de seis dígitos; sair da Blacklist não apaga snapshots de inimigos.
-- **Aliados** são calculados pelas entradas `ALLY`. A coincidência divide as FACs de origem pelo total de FACs oficiais ativas; quando o alvo já é uma FAC oficial, ela própria é retirada do denominador.
-- **Adicionar à Organização** reutiliza o mesmo `gang_id`, exige credencial no backend e gera audit log; nunca ocorre silenciosamente.
-- O backend valida IDs, tipos, limites (5 imagens/250 nomes), hashes e MIME. Hash repetido é recusado como possível duplicidade.
+**Nenhuma imagem, binário, nome de arquivo, hash, metadado de imagem ou texto bruto completo é enviado à API ou gravado pelo novo fluxo.** Antes de confirmar, a revisão existe apenas na memória da página. A confirmação transmite os nomes editados, o texto original de cada nome, confiança, vínculo canônico e os identificadores da lista. O banco mantém os nomes e dados relacionais/auditoria necessários. As tabelas antigas `submission_images` e `ocr_results` são preservadas por compatibilidade; não recebem registros novos. Não apagamos dados legados. Os previews são liberados após sucesso. As screenshots de testes usam uma imagem sintética, nunca prints do usuário.
 
-A migration deve ser aplicada com `npm run migrate` usando `DATABASE_URL`. O OCR precisa de acesso ao CDN do Tesseract na primeira execução para carregar o worker e os dados do idioma; depois o navegador pode reutilizar o cache HTTP.
+O reconhecimento usa a saída em blocos do Tesseract 6; o código anterior procurava apenas `data.lines`, podendo produzir uma revisão vazia. A regressão foi reproduzida no código original: zero nomes para um bloco com um nome; a extração corrigida reconhece esse nome. O erro relatado “source image could not…” não foi reproduzido com o arquivo do usuário; empacotamento local, limite de resolução, fallback de decodificação e regiões PNG tratam causas possíveis, sem comprovar a causa específica do arquivo original.
+
+### Revisão e correção
+
+Cada linha mostra nome original, nome editável, confiança, origem local, possível vínculo canônico/alias, tags de revisão e confirmação. **EDITAR** foca o campo; **REMOVER** exclui a linha da revisão; **Adicionar manualmente** inclui outra. Nomes de baixa confiança permanecem destacados. Cada linha exige confirmação; editar invalida a confirmação dessa linha. Não há confirmação automática de texto bruto. A deduplicação ocorre conservadoramente por entidade mestre no backend e preserva os nomes de origem na proveniência textual.
+
+Para cadastrar sem print, escolha a FAC/tipo e clique **CRIAR LISTA MANUAL**. Para corrigir uma lista existente, abra `/#fac/ID`, use **EDITAR** ao lado de cada aliado/inimigo ou **EDITAR LISTA**. Os alertas também levam à edição da lista da FAC envolvida. Adicione, corrija ou remova nomes e confirme. A lista completa revisada cria um novo snapshot; nunca altera snapshots antigos. Uma lista vazia exige confirmação explícita e remove apenas as relações atuais daquele tipo. A revisão se mantém ao navegar por hash; recarregar a página descarta a revisão não salva. Trocar a FAC/tipo durante uma revisão exige voltar à seleção original ou iniciar outra revisão.
+
+### Snapshots e cálculos
+
+- O snapshot atual é o **CONFIRMED** mais recente para `source_faction_id + relation_type`, com desempate determinístico. `ALLY` e `ENEMY` são independentes; histórico e status de revisão não entram na situação atual.
+- **Aliada de**: FACs oficiais ativas que possuem a entidade mestre no snapshot atual `ALLY`.
+- **Tem guerra com**: FACs oficiais ativas que possuem a entidade no snapshot atual `ENEMY`. As frases são montadas a partir dos IDs, nunca persistidas.
+- **Coincidência de aliados**: FACs ativas declarantes / FACs ativas esperadas. Se o alvo pertence à Organização, sua própria FAC fica fora do denominador e do numerador. Uma candidata nunca é adicionada automaticamente.
+- **Divergência**: a mesma entidade mestre tem pelo menos um declarante `ALLY` e um `ENEMY` nos snapshots atuais. Os cards mostram nome, FACs, tipo, data, snapshot, nível de alerta, detalhes e edição. Dois aliados, dois inimigos ou snapshots antigos não geram divergência.
+- **Conflito crítico**: item ativo da Blacklist aparece em `ALLY` atual. A relação não é apagada; a correção da lista recalcula o alerta.
+- **Cobertura da Blacklist**: FACs ativas com `ENEMY` atual para o alvo / total de FACs ativas. Lista nominal de FACs com guerra e faltantes. FAC inativa não é exigida. Desativar/remover da Blacklist preserva as relações normais de inimigo.
+- **Aliases**: nomes normalizados e aliases existentes são resolvidos para `gang_id` antes da inserção; aliases não criam uma entidade nova. Correspondências imprecisas nunca são aceitas automaticamente.
+- **Promoções administrativas**: adicionar à Organização/Blacklist reutiliza `gang_id`, valida a credencial no backend e grava auditoria. A leitura OCR e a confirmação de listas continuam públicas, com limite de submissões no backend.
+
+### Páginas e rotas
+
+`/#inicio`, `/#ocr`, `/#inimigos`, `/#aliados`, `/#divergencias`, `/#blacklist`, `/#facs`, `/#historico`, `/#admin`, `/#fac/ID`, `/#gangue/ID` e `/#historico/SNAPSHOT_ID`.
+
+As páginas ocultam seções fora da rota sem recriar o OCR; voltar, avançar e refresh funcionam com hash routes. O fallback de `netlify.toml` foi preservado. O menu mostra a página ativa, fecha após navegação e move o foco para o título. O footer e a marca oficial foram preservados. Há filtros de inimigos/aliados e cobertura da Blacklist; histórico e detalhes são expansíveis. Alertas prioritários e indicadores são calculados com dados da API, sem atividades fictícias.
+
+### SQL para executar manualmente no Neon
+
+- Para instalação nova ou atualização segura de uma instalação existente: abra **`database/neon-complete-setup.sql`**, copie o conteúdo inteiro no SQL Editor do Neon e execute. O script é transacional e idempotente; reutiliza as tabelas, preserva os dados e registra as migrations.
+- Se 001 e 002 já estiverem instaladas, **`database/neon-upgrade-003.sql`** contém somente a atualização 003, também com transação e registro em `schema_migrations`.
+- A migration nova **`003_review_provenance.sql`** adiciona nomes revisados, proveniência textual, origem OCR/MANUAL, limite de submissões e repara vínculos mestres ausentes dos cadastros antigos. Não cria tabela por FAC nem novas tabelas de imagens. Não apaga imagens/metadados legados.
+- Alternativa automatizada: `npm run migrate` com `DATABASE_URL` configurada. Não executamos migrations no Neon real neste ambiente, pois a conexão não foi fornecida.
+
+### Desenvolvimento e validação
+
+`npm run dev` gera o build e serve `dist` na porta 4173, incluindo os assets locais do OCR. O servidor estático não emula as Functions; dados reais exigem Netlify Dev ou deploy com as variáveis configuradas. As variáveis são lidas no backend, nunca embutidas no frontend.
+
+```bash
+npm install
+npm run lint
+npm run typecheck
+npm test
+npm run test:browser
+npm run build
+git diff --check
+```
+
+`lint` e `typecheck` são os scripts existentes de verificação sintática com `node --check`; o projeto JavaScript não tem TypeScript nem verificação estática de tipos completa. `npm test` executa testes unitários e integração PostgreSQL via PGlite com banco descartável, migrations reais, transações, rollback, aliases, preservação entre tipos, snapshots atuais e alertas. `npm run test:browser` usa Playwright, Chromium, OCR real com WASM/português do próprio build, banco descartável e axe para verificações básicas WCAG. Não acessa o Neon. No Linux há Chromium empacotado; em outros sistemas instale `npx playwright install chromium`. É possível escolher outro executável com `REVO_CHROMIUM_PATH`.
+
+As larguras automatizadas são 320, 360, 375, 390, 412 e 430 px. Os testes cobrem seletor nativo por teclado, `setInputFiles`, seleção múltipla, seleção repetida, limites, JPEG/WEBP reais, arquivo corrompido, drag-and-drop, navegação, menu, refresh, manutenção da revisão, confirmação sem imagem no payload, correção manual, PWA e ausência de overflow. Capturas: `artifacts/screenshots/ocr-mobile.png`, `ocr-desktop.png`, `divergencias.png`, `blacklist.png`, `fac.png`.
+
+Limitações: não houve dispositivo Android/iPhone físico nem instalação real de PWA nesses aparelhos. A automação Chromium não comprova a apresentação do seletor nativo em Safari/Android. Não houve conexão/auditoria do Neon real, deploy ou teste do domínio publicado no Netlify. O OCR foi exercitado com texto sintético legível; prints de jogo com fontes pequenas, colunas, ícones, compressão ou baixo contraste podem gerar nomes incorretos. A revisão humana é obrigatória e o cadastro manual continua disponível. Consulte `docs/auditoria.md` para o relatório e os limites da validação.
