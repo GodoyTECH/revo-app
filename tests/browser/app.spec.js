@@ -76,3 +76,21 @@ test('PWA shell survives an offline refresh without caching API responses',async
  await context.setOffline(true);await page.reload({waitUntil:'domcontentloaded'});await expect(page.locator('#ocr')).toBeVisible();await expect(page.locator('#dataError')).toBeVisible();
  const keys=await page.evaluate(async()=>{const names=await caches.keys();return(await Promise.all(names.map(async(n)=>(await(await caches.open(n)).keys()).map((r)=>r.url)))).flat()});expect(keys.some((url)=>url.includes('/api/'))).toBe(false);await context.setOffline(false);
 });
+test('manual Save confirms typed names and finishes on the FAC without individual checkboxes',async({page})=>{
+ await open(page);await page.locator('#ocrFaction').selectOption(faction);await page.locator('input[value="ALLY"]').check();await page.locator('#manualList').click();
+ await page.locator('[data-ocr-name]').first().fill('ALIADO MANUAL DIRETO');
+ await page.locator('#addOcrRow').click();await page.locator('[data-ocr-name]').last().fill('SEGUNDO ALIADO MANUAL');
+ await page.locator('#confirmOcr').click();await expect(page).toHaveURL(new RegExp('#fac/'+faction+'$'),{timeout:3000});
+ await expect(page.locator('#factionDetail')).toContainText('ALIADO MANUAL DIRETO');await expect(page.locator('#factionDetail')).toContainText('SEGUNDO ALIADO MANUAL');await expect(page.locator('#factionDetail')).toContainText('FAC X');
+ await expect(page.locator('#ocrReview')).toBeHidden();
+ await page.locator('#factionDetail [data-edit-list][data-type="ALLY"]').first().click();await expect(page.locator('#confirmOcr')).toHaveText('SALVAR LISTA');await expect(page.locator('[data-confirm-row]')).toHaveCount(0);
+ await page.locator('[data-ocr-name]').first().fill('ALIADO MANUAL EDITADO');await page.locator('#confirmOcr').click();await expect(page).toHaveURL(new RegExp('#fac/'+faction+'$'));
+ await page.reload();await expect(page.locator('#factionDetail')).toContainText('ALIADO MANUAL EDITADO');await expect(page.locator('#factionDetail')).toContainText('SEGUNDO ALIADO MANUAL');await expect(page.locator('#factionDetail')).toContainText('FAC X');
+});
+test('manual failed Save keeps names for retry and never signals completion',async({page})=>{
+ await page.request.post('/api/diplomacy-submit',{data:{sourceFactionId:faction,relationType:'ALLY',importMode:'COMPLETE',inputSource:'MANUAL',entries:[{name:'ALIADO MANUAL EDITADO',originalText:'ALIADO MANUAL EDITADO',confidence:100,confirmed:true}]}});
+ await open(page);await page.locator('#ocrFaction').selectOption(faction);await page.locator('#manualList').click();await page.locator('[data-ocr-name]').fill('INIMIGO MANUAL RETENTATIVA');
+ await page.route('**/api/diplomacy-submit',route=>route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:'Não foi possível salvar. Tente novamente.'})}));
+ await page.locator('#confirmOcr').click();await expect(page.locator('.toast')).toContainText('Não foi possível salvar');await expect(page.locator('#ocrReview')).toBeVisible();await expect(page.locator('[data-ocr-name]')).toHaveValue('INIMIGO MANUAL RETENTATIVA');await expect(page.locator('#confirmOcr')).toBeEnabled();
+ await page.unroute('**/api/diplomacy-submit');await page.locator('#confirmOcr').click();await expect(page).toHaveURL(new RegExp('#fac/'+faction+'$'));await expect(page.locator('#factionDetail')).toContainText('INIMIGO MANUAL RETENTATIVA');await expect(page.locator('#factionDetail')).toContainText('ALIADO MANUAL EDITADO');
+});

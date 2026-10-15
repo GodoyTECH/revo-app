@@ -214,9 +214,13 @@ $('#imagePreviews').addEventListener('click', (event) => { if (event.target.data
 function bindReview() { state.reviewFaction = $('#ocrFaction').value; state.reviewType = $('input[name="relationType"]:checked').value; }
 function matchName(name) { const normalized = normalizeGangName(name); return state.catalog.find((g) => normalizeGangName(g.name) === normalized || (g.aliases || []).some((a) => normalizeGangName(a) === normalized)); }
 function renderOcrRows() {
+  const manual = state.inputSource === 'MANUAL';
+  $('#confirmOcr').textContent = manual ? 'SALVAR LISTA' : 'CONFIRMAR LISTA';
+  $('#ocrReview h3').textContent = manual ? 'Lista manual' : 'Revisar leitura';
+  $('#ocrReview .kicker').textContent = manual ? 'DIGITE OS NOMES E SALVE A LISTA' : 'REVISÃO HUMANA OBRIGATÓRIA';
   $('#ocrRows').innerHTML = state.ocrRows.map((row, index) => {
     const match = matchName(row.name); row.gangId = match?.id || null;
-    return `<div class="ocr-row"><div><small>OCR original: ${esc(row.originalText)} · Origem: ${esc(row.origin || 'Manual')}</small><label>Nome corrigido<input data-ocr-name="${index}" value="${esc(row.name)}" maxlength="100" /></label><p class="row-match">${match ? `Nome canônico: ${esc(match.name)} · ${normalizeGangName(match.name) !== normalizeGangName(row.name) ? 'ALIAS ENCONTRADO' : 'POSSÍVEL CORRESPONDÊNCIA'}` : 'NOVA GANGUE'}</p><span class="badge">${row.confirmed ? 'CONFIRMADO' : row.confidence < 70 ? 'REVISAR OCR · BAIXA CONFIANÇA' : 'REVISAR OCR'}</span><label><input type="checkbox" data-confirm-row="${index}" ${row.confirmed ? 'checked' : ''}/> Confirmar nome</label></div><span class="confidence ${row.confidence < 70 ? 'low' : ''}">${row.confidence}%</span><div><button type="button" data-edit-row="${index}">EDITAR</button><button type="button" data-remove-row="${index}" aria-label="Remover nome ${esc(row.name)}">REMOVER</button></div></div>`;
+    return `<div class="ocr-row"><div><small>OCR original: ${esc(row.originalText)} · Origem: ${esc(row.origin || 'Manual')}</small><label>Nome corrigido<input data-ocr-name="${index}" value="${esc(row.name)}" maxlength="100" /></label><p class="row-match">${match ? `Nome canônico: ${esc(match.name)} · ${normalizeGangName(match.name) !== normalizeGangName(row.name) ? 'ALIAS ENCONTRADO' : 'POSSÍVEL CORRESPONDÊNCIA'}` : 'NOVA GANGUE'}</p><span class="badge">${manual ? 'ENTRADA MANUAL' : row.confirmed ? 'CONFIRMADO' : row.confidence < 70 ? 'REVISAR OCR · BAIXA CONFIANÇA' : 'REVISAR OCR'}</span>${manual ? '' : `<label><input type="checkbox" data-confirm-row="${index}" ${row.confirmed ? 'checked' : ''}/> Confirmar nome</label>`}</div><span class="confidence ${row.confidence < 70 ? 'low' : ''}">${row.confidence}%</span><div><button type="button" data-edit-row="${index}">EDITAR</button><button type="button" data-remove-row="${index}" aria-label="Remover nome ${esc(row.name)}">REMOVER</button></div></div>`;
   }).join('');
 }
 function progress(stage, value = 0) { $('#ocrProgress').hidden = false; $('#ocrProgress strong').textContent = stage; $('#ocrProgress progress').value = value; }
@@ -242,7 +246,7 @@ $('#processOcr').addEventListener('click', async () => {
 $('#ocrRows').addEventListener('input', (event) => {
   if (event.target.dataset.ocrName !== undefined) {
     const row = state.ocrRows[Number(event.target.dataset.ocrName)]; row.name = event.target.value; row.confirmed = false; row.gangId = matchName(row.name)?.id || null;
-    const container = event.target.closest('.ocr-row'); container.querySelector('[type=checkbox]').checked = false; container.querySelector('.badge').textContent = 'REVISAR OCR'; container.querySelector('.row-match').textContent = row.gangId ? `Nome canônico: ${matchName(row.name).name} · POSSÍVEL CORRESPONDÊNCIA` : 'NOVA GANGUE';
+    const container = event.target.closest('.ocr-row'); const checkbox = container.querySelector('[type=checkbox]'); if (checkbox) checkbox.checked = false; container.querySelector('.badge').textContent = state.inputSource === 'MANUAL' ? 'ENTRADA MANUAL' : 'REVISAR OCR'; container.querySelector('.row-match').textContent = row.gangId ? `Nome canônico: ${matchName(row.name).name} · POSSÍVEL CORRESPONDÊNCIA` : 'NOVA GANGUE';
   }
 });
 $('#ocrRows').addEventListener('change', (event) => { if (event.target.dataset.confirmRow !== undefined) { state.ocrRows[Number(event.target.dataset.confirmRow)].confirmed = event.target.checked; renderOcrRows(); } });
@@ -258,8 +262,11 @@ $('#manualList').addEventListener('click', () => {
 $('#confirmOcr').addEventListener('click', async () => {
   if (state.busy) return;
   if (state.reviewFaction !== $('#ocrFaction').value || state.reviewType !== $('input[name="relationType"]:checked').value) return toast('A FAC ou o tipo mudou. Volte à seleção original ou inicie uma nova revisão.', true);
-  const entries = state.ocrRows.map(({ name, originalText, confidence, gangId, confirmed }) => ({ name, originalText, confidence, gangId, confirmed }));
-  if (entries.some((row) => !row.name.trim() || !row.confirmed)) return toast('Edite e confirme cada nome antes de salvar.', true);
+  const manual = state.inputSource === 'MANUAL', sourceFactionId = state.reviewFaction;
+  // Clicking Save is the explicit human confirmation for names typed manually.
+  const entries = state.ocrRows.map(({ name, originalText, confidence, gangId, confirmed }) => ({ name, originalText: originalText === 'Adição manual' ? name.trim() : originalText, confidence, gangId, confirmed: manual || confirmed }));
+  if (entries.some((row) => !row.name.trim())) return toast('Preencha todos os nomes antes de salvar.', true);
+  if (entries.some((row) => !row.confirmed)) return toast('Edite e confirme cada nome antes de salvar.', true);
   if (!entries.length && !confirm('Confirmar lista vazia? Todas as relações atuais deste tipo serão removidas, preservando o histórico.')) return;
   const previousConflicts = new Set(state.diplomacy.filter((g) => g.divergence || g.critical).map((g) => g.id));
   setBusy(true); progress('Salvando lista confirmada');
@@ -270,7 +277,8 @@ $('#confirmOcr').addEventListener('click', async () => {
     const snapshot = state.history.find((s) => s.id === result.id), diff = snapshot ? snapshotDiff(snapshot, state.history) : { added: [], removed: [] };
     const conflicts = new Set(state.diplomacy.filter((g) => g.divergence || g.critical).map((g) => g.id));
     $('#ocrSummary').innerHTML = `<h3>Lista confirmada</h3><p>${result.entries} nomes · Adicionados: ${diff.added.map((e) => esc(e.name)).join(', ') || 'nenhum'} · Removidos: ${diff.removed.map((e) => esc(e.name)).join(', ') || 'nenhum'}</p><p>Divergências novas: ${[...conflicts].filter((id) => !previousConflicts.has(id)).length} · Resolvidas: ${[...previousConflicts].filter((id) => !conflicts.has(id)).length}</p><a href="#fac/${$('#ocrFaction').value}">VER FAC, ALIADOS E INIMIGOS</a>`;
-    $('#ocrReview').hidden = true; state.ocrFiles = []; state.ocrRows = []; releasePreviews(); $('#imagePreviews').replaceChildren(); $('#ocrFiles').value = ''; toast('Lista confirmada e consolidada.');
+    $('#ocrReview').hidden = true; state.ocrFiles = []; state.ocrRows = []; releasePreviews(); $('#imagePreviews').replaceChildren(); $('#ocrFiles').value = ''; toast(manual ? 'Lista manual salva.' : 'Lista confirmada e consolidada.');
+    if (manual) location.hash = `fac/${sourceFactionId}`;
   } catch (error) { toast(error.message, true); }
   finally { $('#ocrProgress').hidden = true; setBusy(false); }
 });
