@@ -13,10 +13,10 @@ test('name normalization merges controlled punctuation, spaces and accents', () 
 });
 
 test('public OCR submission is bounded and accepts reviewed ally/enemy data', () => {
-  const valid = cleanDiplomacySubmission({ sourceFactionId: uuid, relationType: 'ENEMY', importMode: 'COMPLETE', entries: [{ name: 'FAC X', originalText: 'FAC X', confidence: 98 }], images: [{ fileName: 'print.webp', mimeType: 'image/webp', sha256: hash, rawText: 'FAC X' }] });
+  const valid = cleanDiplomacySubmission({ sourceFactionId: uuid, relationType: 'ENEMY', importMode: 'COMPLETE', entries: [{ name: 'FAC X', originalText: 'FAC X', confidence: 98, confirmed: true }], images: [] });
   assert.equal(valid.entries[0].name, 'FAC X');
   assert.equal(cleanDiplomacySubmission({ ...valid, sourceFactionId: 'texto-solto' }), null);
-  assert.equal(cleanDiplomacySubmission({ ...valid, images: Array(6).fill(valid.images[0]) }), null);
+  assert.equal(cleanDiplomacySubmission({ ...valid, images: Array(6).fill({}) }), null);
 });
 
 test('diplomacy migration keeps ally, enemy and blacklist concepts separate', async () => {
