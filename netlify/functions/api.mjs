@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless';
+import { resolveGang } from '../../src/review.js';
 import { consolidate } from '../../src/diplomacy.js';
 import { randomUUID } from 'node:crypto';
 import { authorizeMutation, CREDENTIAL_PATTERN, hashCredential, hashIp } from './lib/security.mjs';
@@ -14,7 +15,7 @@ export async function readData(sql, route) {
   if (route === 'allies') return sql.query("SELECT * FROM external_relations WHERE relation_type='official_ally' ORDER BY name");
   if (route === 'audit') return sql.query('SELECT id, operation, entity_type, entity_id, previous_value, new_value, created_at FROM audit_logs ORDER BY created_at DESC LIMIT 100');
   if (route === 'diplomacy') {
-    const catalog = await sql.query("SELECT g.id,g.canonical_name AS name,COALESCE(json_agg(a.alias) FILTER(WHERE a.id IS NOT NULL),'[]') AS aliases FROM gangs g LEFT JOIN gang_aliases a ON a.gang_id=g.id GROUP BY g.id ORDER BY g.canonical_name");
+    const catalog = await sql.query("SELECT g.id,g.canonical_name AS name,g.normalized_name,COALESCE(json_agg(a.alias) FILTER(WHERE a.id IS NOT NULL),'[]') AS aliases FROM gangs g LEFT JOIN gang_aliases a ON a.gang_id=g.id GROUP BY g.id ORDER BY g.canonical_name");
     const history = await sql.query(`SELECT s.*,s.confirmed_at::text AS confirmed_at,s.created_at::text AS created_at,f.name AS source_name,
       COALESCE(json_agg(jsonb_build_object('id',e.id,'target_gang_id',e.target_gang_id,'name',g.canonical_name,'reviewed_name',e.reviewed_name,'originalText',e.ocr_original_text,'confidence',e.ocr_confidence,'provenance',e.review_provenance)) FILTER(WHERE e.id IS NOT NULL),'[]') AS entries
       FROM diplomacy_snapshots s JOIN organization_factions f ON f.id=s.source_faction_id
@@ -29,18 +30,20 @@ export async function readData(sql, route) {
 export async function submitDiplomacy(sql, body, ipHash) {
   const data = cleanDiplomacySubmission(body);
   if (!data) return json(400, { error: 'Envio inválido: confirme os nomes e respeite os limites. Imagens não são aceitas.' });
-  const source = await sql.query("SELECT id FROM organization_factions WHERE id=$1 AND status='active'", [data.sourceFactionId]);
+  const source = await sql.query("SELECT id,name FROM organization_factions WHERE id=$1 AND status='active'", [data.sourceFactionId]);
   if (!source.length) return json(400, { error: 'FAC de origem inválida ou inativa.' });
-  const catalog = await sql.query('SELECT g.id,g.normalized_name,a.normalized_alias FROM gangs g LEFT JOIN gang_aliases a ON a.gang_id=g.id');
-  const resolved = new Map();
-  for (const entry of data.entries) {
+  const catalog = await sql.query("SELECT g.id,g.canonical_name AS name,g.normalized_name,COALESCE(json_agg(a.alias) FILTER(WHERE a.id IS NOT NULL),'[]') AS aliases FROM gangs g LEFT JOIN gang_aliases a ON a.gang_id=g.id GROUP BY g.id ORDER BY g.canonical_name");
+  const resolved = new Map(), issues = [];
+  for (const [index, entry] of data.entries.entries()) {
     const normalized = normalizeName(entry.name);
-    const match = catalog.find((g) => g.normalized_name === normalized || g.normalized_alias === normalized);
-    if (entry.gangId && (!match || match.id !== entry.gangId)) return json(400, { error: 'Correspondência alterada. Revise o nome novamente.' });
+    const match = resolveGang(entry.name, catalog);
+    if (entry.gangId && (!match || match.id !== entry.gangId)) issues.push({ code: 'MATCH_CHANGED', indexes: [index], name: entry.name, canonicalName: match?.name || null, gangId: match?.id || null, message: `Bloco ${index + 1}: ${entry.name} tem uma correspondência desatualizada${match ? `; o cadastro atual é ${match.name}` : ''}. Revise este nome.` });
     const key = match?.id || normalized;
     if (!resolved.has(key)) resolved.set(key, { id: match?.id, normalized, entries: [] });
     resolved.get(key).entries.push(entry);
   }
+  if (issues.length) return json(409, { code: 'REVIEW_REQUIRED', error: issues.map((i) => i.message).join(' '), issues });
+  const warnings = [...resolved.values()].filter((item) => item.entries.length > 1).map((item) => ({ code: 'DUPLICATE', name: item.entries[0].name, message: `${item.entries[0].name}: ${item.entries.length} ocorrências foram consolidadas em uma relação da FAC ${source[0].name}.` }));
   const snapshotId = randomUUID();
   // Lock one source/type during submission; all writes and the audit commit together.
   const queries = [sql.query('SELECT pg_advisory_xact_lock(hashtext($1))', [data.sourceFactionId + data.relationType]),
@@ -54,7 +57,7 @@ export async function submitDiplomacy(sql, body, ipHash) {
   }
   queries.push(sql.query("INSERT INTO audit_logs(operation,entity_type,entity_id,new_value,actor_ip_hash) VALUES('DIPLOMACY_CONFIRM','diplomacy_snapshot',$1,$2::jsonb,$3)", [snapshotId, JSON.stringify({ sourceFactionId: data.sourceFactionId, relationType: data.relationType, entries: resolved.size, inputSource: data.inputSource }), ipHash]));
   await sql.transaction(queries);
-  return json(201, { id: snapshotId, entries: resolved.size });
+  return json(201, { id: snapshotId, entries: resolved.size, warnings });
 }
 
 const auditQuery = (operation, entity, id, before, after, ipHash) => ({ text: 'INSERT INTO audit_logs(operation, entity_type, entity_id, previous_value, new_value, actor_ip_hash) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6)', params: [operation, entity, id, JSON.stringify(before), JSON.stringify(after), ipHash] });

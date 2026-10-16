@@ -1,8 +1,10 @@
+import { resolveGang, reviewNotices } from './review.js';
+import { initCropEditor } from './crop.js';
 import { currentSnapshots, snapshotDiff } from './diplomacy.js';
 import { validateFiles, decodeImage } from './gallery.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { factions: [], blacklist: [], diplomacy: [], history: [], catalog: [], busy: false, inputSource: 'OCR', ocrFiles: [], ocrImages: [], ocrRows: [], filter: 'all', currentFaction: null, pendingOperation: null };
+const state = { factions: [], blacklist: [], diplomacy: [], history: [], catalog: [], diplomacyLoaded: false, busy: false, inputSource: 'OCR', ocrFiles: [], ocrImages: [], ocrRows: [], filter: 'all', currentFaction: null, pendingOperation: null };
 const esc = (value = '') => { const node = document.createElement('span'); node.textContent = value; return node.innerHTML; };
 const formatDate = (value) => value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—';
 const whatsappDigits = (value) => String(value || '').replace(/\D/g, '');
@@ -14,9 +16,9 @@ function toast(message, error = false) {
 }
 
 async function api(resource, options = {}) {
-  const response = await fetch(`/api/${resource}`, { headers: { 'content-type': 'application/json' }, ...options });
+  const response = await fetch(`/api/${resource}`, { cache: 'no-store', headers: { 'content-type': 'application/json' }, ...options });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) { const error = new Error(body.error || 'Não foi possível concluir a operação.'); error.status = response.status; throw error; }
+  if (!response.ok) { const error = new Error(body.error || 'Não foi possível concluir a operação.'); error.status = response.status; error.issues = body.issues || []; throw error; }
   return body;
 }
 
@@ -29,9 +31,10 @@ async function loadData() {
     $('#activeFactionCount').textContent = state.factions.filter((item) => item.status === 'active').length;
     $('#blacklistCount').textContent = state.blacklist.filter((item) => item.status === 'active').length;
     const diplomacy = await api('diplomacy'); state.diplomacy = diplomacy.gangs || []; state.history = diplomacy.history || []; state.catalog = diplomacy.catalog || [];
-    renderFactions(); renderBlacklist(); renderDiplomacy(); populateOcrFactions(); renderPages(); $('#dataError').hidden = true; return true;
+    state.diplomacyLoaded = true; renderFactions(); renderBlacklist(); renderDiplomacy(); populateOcrFactions(); renderPages(); $('#dataError').hidden = true; return true;
   } catch (error) {
-    $('#dataError').textContent = 'Dados indisponíveis ou desatualizados. Verifique DATABASE_URL e as migrations no servidor.'; $('#dataError').hidden = false;
+    state.diplomacyLoaded = false; $$('.computed-card strong').forEach((node) => { node.textContent = '—'; });
+    $('#dataError').textContent = 'Não foi possível consultar as listas no servidor. Os dados podem estar desatualizados; confira o deploy e a conexão do banco.'; $('#dataError').hidden = false;
     $('.factionList')?.replaceChildren();
     toast(error.status === 503 ? 'Configure o banco para carregar os dados.' : error.message, true);
     renderFactions(); renderBlacklist(); return false;
@@ -180,6 +183,7 @@ $$('nav a').forEach((link) => link.addEventListener('click', () => { nav.classLi
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
 
 const provider = new TesseractOcrProvider();
+const imageCrops = new Map();
 let previewUrls = [], galleryVersion = 0;
 function releasePreviews() { previewUrls.forEach((url) => URL.revokeObjectURL(url)); previewUrls = []; }
 async function setOcrFiles(files, append = true) {
@@ -188,12 +192,9 @@ async function setOcrFiles(files, append = true) {
   let valid = true;
   const { accepted, errors } = validateFiles([...files], append ? state.ocrFiles : []);
   state.ocrFiles = accepted; state.ocrImages = []; state.ocrRows = [];
-  releasePreviews();
+  for (const file of imageCrops.keys()) if (!accepted.includes(file)) imageCrops.delete(file);
   $('#ocrFiles').value = '';
-  $('#imagePreviews').innerHTML = accepted.map((file, index) => {
-    const url = URL.createObjectURL(file); previewUrls.push(url);
-    return `<figure><img src="${url}" alt="Preview de ${esc(file.name)}"/><figcaption>${esc(file.name)}<button type="button" data-remove-image="${index}" aria-label="Remover ${esc(file.name)}">×</button></figcaption></figure>`;
-  }).join('');
+  renderImagePreviews();
   $('#uploadErrors').textContent = errors.join(' ');
   $('#processOcr').disabled = true; state.validating = true; $('#ocrReview').hidden = true;
   for (const [index, image] of $$('#imagePreviews img').entries()) {
@@ -205,6 +206,26 @@ async function setOcrFiles(files, append = true) {
   }
   if (version === galleryVersion) { state.validating = false; $('#processOcr').disabled = !valid || !accepted.length; }
 }
+function renderImagePreviews() {
+  releasePreviews();
+  $('#imagePreviews').innerHTML = state.ocrFiles.map((file, index) => {
+    const url = URL.createObjectURL(imageCrops.get(file)?.blob || file); previewUrls.push(url);
+    return `<figure><img src="${url}" alt="Preview de ${esc(file.name)}"/><figcaption>${esc(file.name)}${imageCrops.has(file) ? ' · RECORTADA' : ''}<button type="button" data-remove-image="${index}" aria-label="Remover ${esc(file.name)}">×</button><button type="button" class="crop-image" data-crop-image="${index}">RECORTAR</button></figcaption></figure>`;
+  }).join('');
+}
+let openingCrop = false;
+const openCrop = initCropEditor((file, crop) => {
+  imageCrops.set(file, crop); state.ocrRows = []; $('#ocrReview').hidden = true; renderImagePreviews();
+});
+$('#imagePreviews').addEventListener('click', async (event) => {
+  const index = event.target.dataset.cropImage;
+  if (index === undefined || state.busy || openingCrop) return;
+  if (!$('#ocrReview').hidden && !confirm('O recorte exige uma nova leitura. Substituir a revisão atual?')) return;
+  openingCrop = true;
+  try { const file = state.ocrFiles[Number(index)]; await openCrop(file, imageCrops.get(file)); }
+  catch { toast('Não foi possível abrir a imagem para recorte. Remova o arquivo e selecione novamente.', true); }
+  finally { openingCrop = false; }
+});
 $('#ocrFiles').addEventListener('change', (event) => setOcrFiles(event.target.files));
 $('#uploadZone').addEventListener('dragover', (event) => { event.preventDefault(); event.currentTarget.classList.add('dragging'); });
 $('#uploadZone').addEventListener('dragleave', (event) => event.currentTarget.classList.remove('dragging'));
@@ -212,7 +233,19 @@ $('#uploadZone').addEventListener('drop', (event) => { event.preventDefault(); e
 $('#imagePreviews').addEventListener('click', (event) => { if (event.target.dataset.removeImage !== undefined && !state.busy) { state.ocrFiles.splice(Number(event.target.dataset.removeImage), 1); setOcrFiles(state.ocrFiles, false); } });
 
 function bindReview() { state.reviewFaction = $('#ocrFaction').value; state.reviewType = $('input[name="relationType"]:checked').value; }
-function matchName(name) { const normalized = normalizeGangName(name); return state.catalog.find((g) => normalizeGangName(g.name) === normalized || (g.aliases || []).some((a) => normalizeGangName(a) === normalized)); }
+function matchName(name) { return resolveGang(name, state.catalog); }
+function refreshReviewNotices() {
+  const current = currentSnapshots(state.history).find((s) => s.source_faction_id === $('#ocrFaction').value && s.relation_type === $('input[name="relationType"]:checked').value)?.entries || [];
+  const notices = [...reviewNotices(state.ocrRows, { catalog: state.catalog, blacklist: state.blacklist, current, relationType: $('input[name="relationType"]:checked').value }), ...(state.reviewErrors || [])];
+  $('#reviewIssues').innerHTML = notices.map((issue) => `<div class="review-notice">${esc(issue.message)} <button type="button" class="text-button" data-review-focus="${issue.indexes[0]}">VER BLOCO ${issue.indexes[0] + 1}</button></div>`).join('');
+  for (const [index, row] of $$('.ocr-row').entries()) {
+    row.classList.toggle('has-issue', notices.some((n) => n.indexes.includes(index)));
+    row.dataset.error = String((state.reviewErrors || []).some((n) => n.indexes.includes(index)));
+  }
+  return notices;
+}
+$('#reviewIssues').addEventListener('click', (event) => { const index = event.target.dataset.reviewFocus; if (index !== undefined) $(`[data-ocr-name="${index}"]`)?.focus(); });
+
 function renderOcrRows() {
   const manual = state.inputSource === 'MANUAL';
   $('#confirmOcr').textContent = manual ? 'SALVAR LISTA' : 'CONFIRMAR LISTA';
@@ -220,36 +253,48 @@ function renderOcrRows() {
   $('#ocrReview .kicker').textContent = manual ? 'DIGITE OS NOMES E SALVE A LISTA' : 'REVISÃO HUMANA OBRIGATÓRIA';
   $('#ocrRows').innerHTML = state.ocrRows.map((row, index) => {
     const match = matchName(row.name); row.gangId = match?.id || null;
-    return `<div class="ocr-row"><div><small>OCR original: ${esc(row.originalText)} · Origem: ${esc(row.origin || 'Manual')}</small><label>Nome corrigido<input data-ocr-name="${index}" value="${esc(row.name)}" maxlength="100" /></label><p class="row-match">${match ? `Nome canônico: ${esc(match.name)} · ${normalizeGangName(match.name) !== normalizeGangName(row.name) ? 'ALIAS ENCONTRADO' : 'POSSÍVEL CORRESPONDÊNCIA'}` : 'NOVA GANGUE'}</p><span class="badge">${manual ? 'ENTRADA MANUAL' : row.confirmed ? 'CONFIRMADO' : row.confidence < 70 ? 'REVISAR OCR · BAIXA CONFIANÇA' : 'REVISAR OCR'}</span>${manual ? '' : `<label><input type="checkbox" data-confirm-row="${index}" ${row.confirmed ? 'checked' : ''}/> Confirmar nome</label>`}</div><span class="confidence ${row.confidence < 70 ? 'low' : ''}">${row.confidence}%</span><div><button type="button" data-edit-row="${index}">EDITAR</button><button type="button" data-remove-row="${index}" aria-label="Remover nome ${esc(row.name)}">REMOVER</button></div></div>`;
+    return `<div class="ocr-row"><div><small>Bloco ${index + 1} · Original: ${esc(row.originalText)} · Origem: ${esc(row.origin || 'Manual')}</small><label>Nome corrigido<input data-ocr-name="${index}" value="${esc(row.name)}" maxlength="100" /></label><p class="row-match">${match ? `Nome canônico: ${esc(match.name)} · ${normalizeGangName(match.name) !== normalizeGangName(row.name) ? 'ALIAS ENCONTRADO' : 'POSSÍVEL CORRESPONDÊNCIA'}` : 'NOVA GANGUE'}</p><span class="badge">${manual ? 'ENTRADA MANUAL' : row.confirmed ? 'CONFIRMADO' : row.uncertain ? 'REVISAR OCR · LEITURAS DIFERENTES' : row.confidence < 85 ? 'REVISAR OCR · BAIXA CONFIANÇA' : 'REVISAR OCR'}</span>${manual ? '' : `<label><input type="checkbox" data-confirm-row="${index}" ${row.confirmed ? 'checked' : ''}/> Confirmar nome</label>`}</div><span class="confidence ${row.confidence < 85 || row.uncertain ? 'low' : ''}">${row.confidence}%</span><div><button type="button" data-edit-row="${index}">EDITAR</button><button type="button" data-remove-row="${index}" aria-label="Remover nome ${esc(row.name)}">REMOVER</button></div></div>`;
   }).join('');
+  refreshReviewNotices();
 }
 function progress(stage, value = 0) { $('#ocrProgress').hidden = false; $('#ocrProgress strong').textContent = stage; $('#ocrProgress progress').value = value; }
 function setBusy(busy) { state.busy = busy; for (const el of $$('#ocr button, #ocr select, #ocr input')) el.disabled = busy; if (!busy) $('#processOcr').disabled = !state.ocrFiles.length; }
 $('#processOcr').addEventListener('click', async () => {
   if (state.busy || state.validating) return;
   if (!$('#ocrFaction').value) return toast('Escolha primeiro a FAC dona da lista.', true);
+  state.reviewErrors = [];
   setBusy(true); $('#ocrReview').hidden = true; state.ocrRows = []; state.ocrImages = []; state.inputSource = 'OCR';
   try {
     for (let i = 0; i < state.ocrFiles.length; i++) {
       const file = state.ocrFiles[i];
-      const result = await provider.recognize(file, (value, stage = 'executando OCR') => { progress(`${stage} · imagem ${i + 1} de ${state.ocrFiles.length}`, (i * 100 + value) / state.ocrFiles.length); });
+      const result = await provider.recognize(imageCrops.get(file)?.blob || file, (value, stage = 'executando OCR') => { progress(`${stage} · imagem ${i + 1} de ${state.ocrFiles.length}`, (i * 100 + value) / state.ocrFiles.length); });
       state.ocrRows.push(...result.rows.map((row) => ({ ...row, imageIndexes: [i], origin: file.name, confirmed: false })));
 
     }
     progress('Normalizando nomes e comparando aliases', 100); await new Promise(requestAnimationFrame);
     // Keep every origin for review; backend deduplicates by master entity on confirmation.
     bindReview(); renderOcrRows(); $('#ocrReview').hidden = false; progress('Preparando revisão', 100);
+    const duplicates = refreshReviewNotices().filter((n) => n.code === 'DUPLICATE');
+    if (duplicates.length) toast(duplicates.map((n) => n.message).join(' '), true);
     if (!state.ocrRows.length) toast('Nenhum nome reconhecido. Adicione manualmente ou tente um print mais legível.', true);
   } catch { $('#uploadErrors').textContent = 'Falha durante OCR. Confira a conexão, o formato da imagem e tente novamente.'; }
   finally { $('#ocrProgress').hidden = true; setBusy(false); }
 });
 $('#ocrRows').addEventListener('input', (event) => {
   if (event.target.dataset.ocrName !== undefined) {
+    state.reviewErrors = (state.reviewErrors || []).filter((n) => !n.indexes.includes(Number(event.target.dataset.ocrName)));
     const row = state.ocrRows[Number(event.target.dataset.ocrName)]; row.name = event.target.value; row.confirmed = false; row.gangId = matchName(row.name)?.id || null;
     const container = event.target.closest('.ocr-row'); const checkbox = container.querySelector('[type=checkbox]'); if (checkbox) checkbox.checked = false; container.querySelector('.badge').textContent = state.inputSource === 'MANUAL' ? 'ENTRADA MANUAL' : 'REVISAR OCR'; container.querySelector('.row-match').textContent = row.gangId ? `Nome canônico: ${matchName(row.name).name} · POSSÍVEL CORRESPONDÊNCIA` : 'NOVA GANGUE';
+    refreshReviewNotices();
   }
 });
-$('#ocrRows').addEventListener('change', (event) => { if (event.target.dataset.confirmRow !== undefined) { state.ocrRows[Number(event.target.dataset.confirmRow)].confirmed = event.target.checked; renderOcrRows(); } });
+$('#ocrRows').addEventListener('change', (event) => {
+  if (event.target.dataset.confirmRow !== undefined) { state.ocrRows[Number(event.target.dataset.confirmRow)].confirmed = event.target.checked; renderOcrRows(); }
+  else if (event.target.dataset.ocrName !== undefined) {
+    const notices = refreshReviewNotices().filter((n) => n.indexes.includes(Number(event.target.dataset.ocrName)));
+    if (notices.length) toast(notices.map((n) => n.message).join(' '), notices.some((n) => n.code === 'DUPLICATE'));
+  }
+});
 $('#ocrRows').addEventListener('click', (event) => {
   if (event.target.dataset.removeRow !== undefined) { state.ocrRows.splice(Number(event.target.dataset.removeRow), 1); renderOcrRows(); }
   if (event.target.dataset.editRow !== undefined) $(`[data-ocr-name="${event.target.dataset.editRow}"]`).focus();
@@ -257,7 +302,7 @@ $('#ocrRows').addEventListener('click', (event) => {
 $('#addOcrRow').addEventListener('click', () => { state.ocrRows.push({ name: '', originalText: 'Adição manual', confidence: 100, imageIndexes: [], confirmed: false }); renderOcrRows(); $$('#ocrRows input[data-ocr-name]').at(-1)?.focus(); });
 $('#manualList').addEventListener('click', () => {
   if (!$('#ocrFaction').value) return toast('Escolha a FAC de origem.', true);
-  state.ocrRows = []; state.ocrImages = []; state.inputSource = 'MANUAL'; bindReview(); renderOcrRows(); $('#ocrReview').hidden = false; $('#addOcrRow').click();
+  if (editList($('#ocrFaction').value, $('input[name="relationType"]:checked').value)) $('#addOcrRow').click();
 });
 $('#confirmOcr').addEventListener('click', async () => {
   if (state.busy) return;
@@ -268,6 +313,11 @@ $('#confirmOcr').addEventListener('click', async () => {
   if (entries.some((row) => !row.name.trim())) return toast('Preencha todos os nomes antes de salvar.', true);
   if (entries.some((row) => !row.confirmed)) return toast('Edite e confirme cada nome antes de salvar.', true);
   if (!entries.length && !confirm('Confirmar lista vazia? Todas as relações atuais deste tipo serão removidas, preservando o histórico.')) return;
+  if (!manual && entries.length) {
+    const current = currentSnapshots(state.history).find((s) => s.source_faction_id === sourceFactionId && s.relation_type === state.reviewType);
+    const removed = (current?.entries || []).filter((e) => !entries.some((r) => r.gangId === e.target_gang_id));
+    if (removed.length && !confirm(`Esta leitura substitui a lista atual. Ficarão fora: ${removed.map((e) => e.name).join(', ')}. O histórico será preservado. Continuar?`)) return;
+  }
   const previousConflicts = new Set(state.diplomacy.filter((g) => g.divergence || g.critical).map((g) => g.id));
   setBusy(true); progress('Salvando lista confirmada');
   try {
@@ -277,9 +327,13 @@ $('#confirmOcr').addEventListener('click', async () => {
     const snapshot = state.history.find((s) => s.id === result.id), diff = snapshot ? snapshotDiff(snapshot, state.history) : { added: [], removed: [] };
     const conflicts = new Set(state.diplomacy.filter((g) => g.divergence || g.critical).map((g) => g.id));
     $('#ocrSummary').innerHTML = `<h3>Lista confirmada</h3><p>${result.entries} nomes · Adicionados: ${diff.added.map((e) => esc(e.name)).join(', ') || 'nenhum'} · Removidos: ${diff.removed.map((e) => esc(e.name)).join(', ') || 'nenhum'}</p><p>Divergências novas: ${[...conflicts].filter((id) => !previousConflicts.has(id)).length} · Resolvidas: ${[...previousConflicts].filter((id) => !conflicts.has(id)).length}</p><a href="#fac/${$('#ocrFaction').value}">VER FAC, ALIADOS E INIMIGOS</a>`;
-    $('#ocrReview').hidden = true; state.ocrFiles = []; state.ocrRows = []; releasePreviews(); $('#imagePreviews').replaceChildren(); $('#ocrFiles').value = ''; toast(manual ? 'Lista manual salva.' : 'Lista confirmada e consolidada.');
+    $('#ocrReview').hidden = true; state.ocrFiles = []; state.ocrRows = []; releasePreviews(); imageCrops.clear(); $('#imagePreviews').replaceChildren(); $('#ocrFiles').value = ''; toast((manual ? 'Lista manual salva.' : 'Lista confirmada e consolidada.') + (result.warnings?.length ? ' Repetições consolidadas: ' + result.warnings.map((w) => w.name).join(', ') : ''));
     if (manual) location.hash = `fac/${sourceFactionId}`;
-  } catch (error) { toast(error.message, true); }
+  } catch (error) {
+    state.reviewErrors = error.issues || [];
+    if (state.reviewErrors.length) { await loadData(); renderOcrRows(); $('#reviewIssues').focus(); }
+    toast(error.message, true);
+  }
   finally { $('#ocrProgress').hidden = true; setBusy(false); }
 });
 
@@ -287,6 +341,7 @@ function conflictCard(gang) {
   return `<article class="relation-card enemy"><div><strong class="critical">${gang.critical ? '🚨 CONFLITO CRÍTICO — BLACKLIST × ALIADO' : '⚠ DIVERGÊNCIA DIPLOMÁTICA'}</strong><h3><a href="#gangue/${gang.id}">${esc(gang.name)}</a></h3><p>Blacklist: ${gang.blacklisted ? 'ATIVA' : 'não consta como ativa'} · Alerta: ${gang.critical ? 'CRÍTICO' : 'ALTO'}</p><b>ALIADA DE:</b><ul>${relationSources(gang.ally_of)}</ul><b>INIMIGA DE:</b><ul>${relationSources(gang.enemy_of)}</ul><a href="#gangue/${gang.id}">DETALHES E CORREÇÃO DAS LISTAS</a></div></article>`;
 }
 function coverage(gang) {
+  if (!state.diplomacyLoaded) return '<p>COBERTURA INDISPONÍVEL: as listas do servidor não foram carregadas.</p>';
   const active = state.factions.filter((f) => f.status === 'active');
   const missing = gang?.missing || active, count = active.length - missing.length;
   return `<p>COBERTURA: ${count}/${active.length} — ${gang?.coverage || 0}%</p><span class="badge">${missing.length ? 'PENDÊNCIA' : active.length ? 'COBERTURA COMPLETA' : 'SEM FAC ATIVA'}</span>${gang?.critical ? '<strong class="critical">CONFLITO COM ALIADO</strong>' : ''}<details><summary>FACs com guerra e pendências</summary><b>POSSUEM GUERRA:</b><ul>${relationSources(gang?.enemy_of || [])}</ul><b>NÃO POSSUEM:</b><ul>${missing.map((f) => `<li>⚠ <a href="#fac/${f.id}">${esc(f.name)}</a></li>`).join('')}</ul></details>`;
@@ -306,7 +361,7 @@ renderBlacklist = function () {
 function historyCards(snapshots) {
   return snapshots.map((s) => {
     const diff = snapshotDiff(s, state.history);
-    return `<details id="snapshot-${s.id}" class="history-card"><summary>${esc(s.source_name)} · ${s.relation_type === 'ALLY' ? 'Aliados' : 'Inimigos'} · ${formatDate(s.confirmed_at)} · ${s.status}</summary><p>Snapshot ${s.id} · ${s.import_mode} · Origem ${s.input_source || 'OCR'}</p><p>Adicionados: ${diff.added.map((e) => esc(e.name)).join(', ') || 'nenhum'} · Removidos: ${diff.removed.map((e) => esc(e.name)).join(', ') || 'nenhum'}</p><ul>${(s.entries || []).map((e) => `<li><a href="#gangue/${e.target_gang_id}">${esc(e.name)}</a> · Corrigido: ${esc(e.reviewed_name || e.name)} · OCR: ${esc(e.originalText)} · ${e.confidence}%</li>`).join('')}</ul></details>`;
+    return `<details data-snapshot="${s.id}" class="history-card"><summary>${esc(s.source_name)} · ${s.relation_type === 'ALLY' ? 'Aliados' : 'Inimigos'} · ${formatDate(s.confirmed_at)} · ${s.status}</summary><button type="button" class="text-button" data-restore-snapshot="${s.id}">RESTAURAR ESTA LISTA</button><p>Snapshot ${s.id} · ${s.import_mode} · Origem ${s.input_source || 'OCR'}</p><p>Adicionados: ${diff.added.map((e) => esc(e.name)).join(', ') || 'nenhum'} · Removidos: ${diff.removed.map((e) => esc(e.name)).join(', ') || 'nenhum'}</p><ul>${(s.entries || []).map((e) => `<li><a href="#gangue/${e.target_gang_id}">${esc(e.name)}</a> · Corrigido: ${esc(e.reviewed_name || e.name)} · OCR: ${esc(e.originalText)} · ${e.confidence}%</li>`).join('')}</ul></details>`;
   }).join('') || '<p>Nenhum snapshot disponível.</p>';
 }
 function renderPages() {
@@ -347,20 +402,28 @@ function renderDetails() {
     const gang = state.diplomacy.find((g) => g.id === id);
     $('#gangDetail').innerHTML = gang ? `<h2>${esc(gang.name)}</h2><p>Aliases: ${(gang.aliases || []).map(esc).join(', ') || 'nenhum'}</p><p>Organização: ${gang.is_organization ? 'SIM' : 'NÃO'} · Blacklist: ${gang.blacklisted ? 'ATIVA' : 'NÃO ATIVA'}</p><h3>Aliada de</h3><ul>${relationSources(gang.ally_of)}</ul><h3>Tem guerra com</h3><ul>${relationSources(gang.enemy_of)}</ul><p>Coincidência de aliados: ${gang.ally_count}/${gang.expected} · ${gang.percentage}%</p>${gang.blacklisted ? coverage(gang) : ''}${gang.divergence || gang.critical ? conflictCard(gang) : ''}<h3>Histórico</h3>${historyCards(state.history.filter((s) => s.entries.some((e) => e.target_gang_id === id)))}` : '<h2>Gangue não encontrada</h2>';
   }
-  if (route === 'historico' && id) { const card = document.getElementById(`snapshot-${id}`); if (card) card.open = true; }
+  if (route === 'historico' && id) { const card = $(`#historyList [data-snapshot="${id}"]`); if (card) card.open = true; }
 }
-function editList(factionId, type, target) {
+function editList(factionId, type, target, historical = null) {
   if (state.busy) return toast('Aguarde a operação atual.', true);
   if (!state.factions.some((f) => f.id === factionId && f.status === 'active')) return toast('FAC inativa: ative antes de editar a lista.', true);
   if (!$('#ocrReview').hidden && !confirm('Substituir a revisão atual pela edição desta lista?')) return;
-  const snapshot = currentSnapshots(state.history).find((s) => s.source_faction_id === factionId && s.relation_type === type);
+  const snapshot = historical || currentSnapshots(state.history).find((s) => s.source_faction_id === factionId && s.relation_type === type);
   $('#ocrFaction').value = factionId; $(`input[name="relationType"][value="${type}"]`).checked = true;
-  state.inputSource = 'MANUAL'; state.ocrImages = [];
-  state.ocrRows = (snapshot?.entries || []).map((e) => ({ name: e.name, gangId: e.target_gang_id, originalText: e.originalText || e.name, confidence: Number(e.confidence ?? 100), imageIndexes: [], origin: 'Edição manual', confirmed: true }));
+  state.inputSource = 'MANUAL'; state.ocrImages = []; state.reviewErrors = [];
+  state.ocrRows = (snapshot?.entries || []).map((e) => ({ name: e.name, gangId: e.target_gang_id, originalText: e.originalText || e.name, confidence: Number(e.confidence ?? 100), imageIndexes: [], origin: 'Edição manual', fromSnapshot: true, confirmed: true }));
   bindReview(); renderOcrRows(); $('#ocrReview').hidden = false; location.hash = 'ocr';
   if (target) setTimeout(() => { const index = state.ocrRows.findIndex((r) => r.gangId === target); $(`[data-ocr-name="${index}"]`)?.focus(); }, 0);
+  return true;
 }
-document.addEventListener('click', (event) => { const button = event.target.closest('[data-edit-list]'); if (button) editList(button.dataset.editList, button.dataset.type, button.dataset.target); });
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-edit-list]'); if (button) editList(button.dataset.editList, button.dataset.type, button.dataset.target);
+  const restore = event.target.closest('[data-restore-snapshot]');
+  if (restore) {
+    const snapshot = state.history.find((s) => s.id === restore.dataset.restoreSnapshot);
+    if (snapshot && confirm(`Abrir para revisão a lista de ${snapshot.source_name} em ${formatDate(snapshot.confirmed_at)}? Ela só será restaurada ao clicar SALVAR LISTA.`)) editList(snapshot.source_faction_id, snapshot.relation_type, null, snapshot);
+  }
+});
 for (const [id, options] of [['enemy', [['shared','Compartilhados'],['three','3 ou mais FACs'],['blacklist','Blacklist'],['outside','Fora da Blacklist'],['divergence','Divergências']]], ['ally', [['exclusive','Exclusivos'],['shared','Compartilhados'],['full','100%'],['candidate','Candidatos'],['divergence','Divergências']]]]) {
   $(`#${id}List`).insertAdjacentHTML('beforebegin', `<div class="relation-toolbar"><label>Filtrar<select id="${id}Filter"><option value="all">Todos</option>${options.map(([v,l]) => `<option value="${v}">${l}</option>`).join('')}</select></label><label>FAC<select class="faction-filter" id="${id}FactionFilter"><option value="">Todas as FACs</option></select></label></div>`);
   $(`#${id}Filter`).addEventListener('change', renderDiplomacy); $(`#${id}FactionFilter`).addEventListener('change', renderDiplomacy);

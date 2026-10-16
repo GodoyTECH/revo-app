@@ -14,7 +14,8 @@
     "migrate": "node scripts/migrate.mjs",
     "lint": "node --check src/main.js && node --check netlify/functions/api.mjs",
     "typecheck": "node --check src/main.js && node --check netlify/functions/api.mjs",
-    "test:browser": "npm run build && playwright test"
+    "test:browser": "npm run build && playwright test",
+    "build:netlify": "node scripts/netlify-build.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
