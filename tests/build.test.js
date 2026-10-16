@@ -14,3 +14,8 @@ test('Netlify build ships local OCR and fingerprints every immutable JS/CSS asse
  assert.doesNotMatch(html,/<script[^>]+\.css/);
  for(const path of ['tesseract/tesseract.esm.min.js','tesseract/worker.min.js','tesseract-core/tesseract-core-lstm.wasm.js','tessdata/por.traineddata.gz'])await access('dist/vendor/'+path);
 });
+test('Netlify deploy runs guarded migrations and requires server-only database configuration',async()=>{
+ const {spawnSync}=await import('node:child_process');const toml=await readFile('netlify.toml','utf8');assert.match(toml,/command = "npm run build:netlify"/);
+ const result=spawnSync(process.execPath,['scripts/netlify-build.mjs'],{env:{...process.env,DATABASE_URL:''},encoding:'utf8'});
+ assert.equal(result.status,1);assert.match(result.stderr,/Builds e Functions/);assert.doesNotMatch(result.stderr,/postgres(?:ql)?:\/\//);
+});

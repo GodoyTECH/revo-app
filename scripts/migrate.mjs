@@ -1,18 +1,10 @@
-import { readFile, readdir } from 'node:fs/promises';
 import { neon } from '@neondatabase/serverless';
-
+import { applyMigrations } from './lib/migrations.mjs';
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL não configurada.');
-const sql = neon(process.env.DATABASE_URL);
-await sql`CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`;
-
-for (const name of (await readdir('migrations')).filter((file) => file.endsWith('.sql')).sort()) {
-  const applied = await sql`SELECT 1 FROM schema_migrations WHERE name = ${name}`;
-  if (applied.length) continue;
-  const source = await readFile(`migrations/${name}`, 'utf8');
-  const statements = source
-    .split(';')
-    .map((statement) => statement.replace(/^\s*--.*$/gm, '').trim())
-    .filter(Boolean);
-  await sql.transaction([...statements.map((statement) => sql.query(statement)), sql`INSERT INTO schema_migrations(name) VALUES (${name})`]);
-  console.log(`Migration aplicada: ${name}`);
+try {
+  await applyMigrations(neon(process.env.DATABASE_URL));
+  console.log('Migrations verificadas: somente versões pendentes foram aplicadas. Dados preservados.');
+} catch (error) {
+  console.error('Falha nas migrations. Confira conexão, permissões e logs privados do banco. Código:', error.code || 'indisponível');
+  process.exitCode = 1;
 }
